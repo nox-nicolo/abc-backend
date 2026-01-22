@@ -1,0 +1,6 @@
+# Ignore asset images
+assets/**/*.png
+assets/**/*.jpg
+assets/**/*.jpeg
+assets/**/*.webp
+assets/**/*.gif
