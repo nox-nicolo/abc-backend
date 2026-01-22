@@ -1,0 +1,17 @@
+touch assets/images/post.gitkeep
+touch assets/images/post/salon_gallery.gitkeep
+touch assets/images/profile/salon/display_ads.gitkeep
+touch assets/images/profile/salon/visuals.gitkeep
+touch assets/images/salon_cover_photos.gitkeep
+touch assets/images/salon_gallery.gitkeep
+
+touch assets/images/service_list_styles.gitkeep
+touch assets/images/service_list_styles/major.gitkeep
+touch assets/images/service_list_styles/minor.gitkeep
+
+touch assets/images/user_profile_picture.gitkeep
+touch assets/images/user_profile_picture/admin.gitkeep
+touch assets/images/user_profile_picture/customer.gitkeep
+touch assets/images/user_profile_picture/employee.gitkeep
+touch assets/images/user_profile_picture/service.gitkeep
+touch assets/images/user_profile_picture/stakeholder.gitkeep
