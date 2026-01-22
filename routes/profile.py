@@ -1,0 +1,150 @@
+
+
+from http.client import HTTPException
+from typing import List
+from fastapi import APIRouter, File, Form, Query, UploadFile, status, Depends
+from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
+
+from core.database import get_db
+from pydantic_schemas.auth.jwt_token import TokenData
+from pydantic_schemas.profile.salon import  SalonGalleryResponse, SalonProfileResponse
+from pydantic_schemas.profile.settings import AccountMediaResponse, SalonContactLocationResponse, SalonContactUpdateRequest, SalonProfileResponse, SalonProfileUpdateRequest, SalonWorkingHoursResponse, SalonWorkingHoursUpdateRequest
+from pydantic_schemas.profile.top_salon import TopSalonResponse
+from service.auth.JWT.oauth2 import get_current_user
+from service.profile.salon import profile_salon
+from service.profile.settings.contact_location import update_salon_contact_
+from service.profile.settings.salon_gallery import manage_salon_gallery_
+from service.profile.settings.salon_profile import update_salon_profile_
+from service.profile.settings.salon_working_hours import update_salon_working_hours_
+from service.profile.settings.upload_account_media import upload_account_media_
+from service.profile.top_salon import get_top_salons
+
+
+profile = APIRouter(
+    prefix='/profile',
+    tags=['Profile']
+)
+
+# -------------------------------------------------------------------
+#                                Get
+
+# -------------------------------------------------------------------
+# Get Salon Profle
+# -------------------------------------------------------------------
+@profile.get('/salon',  status_code=status.HTTP_200_OK)
+async def salon_profile(db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_user)):
+    user_id = current_user.user_id
+    
+    # Let FastAPI handle the response_model serialization
+    # If profile_salon returns a dict, FastAPI will validate it against SalonProfileResponse
+    return await profile_salon(db=db, user=user_id)
+
+
+@profile.get("/top", response_model=TopSalonResponse)
+async def fetch_top_salons(
+    limit: int = Query(10, le=20),
+    db: Session = Depends(get_db),
+):
+    try:
+        # Just call the service and return
+        return get_top_salons(db, limit)
+        
+    except HTTPException as e:
+        return JSONResponse(
+            status_code=e.status_code, 
+            content={"detail": e.detail}
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            content={"detail": f"An unexpected error occurred: {e}"}
+        )
+        
+        
+        
+@profile.patch(
+    "/upload_account_media",
+    response_model=AccountMediaResponse
+)
+async def upload_account_media(
+    profile_image: UploadFile | None = File(None),
+    cover_ads: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    return await upload_account_media_(
+        user_id=current_user.user_id,
+        profile_image=profile_image,
+        cover_ads=cover_ads,
+        db=db,
+    )
+
+
+
+@profile.patch(
+    "/salon_profile",
+    response_model=SalonProfileResponse,
+)
+async def update_salon_profile(
+    payload: SalonProfileUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    return await update_salon_profile_(
+        user_id=current_user.user_id,
+        payload=payload,
+        db=db,
+    )
+
+
+@profile.patch(
+    "/contact",
+    response_model=SalonContactLocationResponse,
+)
+async def update_salon_contact(
+    payload: SalonContactUpdateRequest,
+    db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_user),
+):
+    return await update_salon_contact_(
+        user_id=current_user.user_id,
+        payload=payload,
+        db=db,
+    )
+
+
+@profile.put(
+    "/working_hours",
+    response_model=SalonWorkingHoursResponse,
+)
+async def update_working_hours(
+    payload: SalonWorkingHoursUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    return await update_salon_working_hours_(
+        user_id=current_user.user_id,
+        payload=payload,
+        db=db,
+    )
+
+
+
+@profile.patch(
+    "/salon_gallery",
+    response_model=List[SalonGalleryResponse],
+)
+async def update_gallery(
+    # Optional files for adding
+    files: List[UploadFile] = File(default=[]),
+    # Optional IDs for deleting (sent as a comma-separated string or multiple form fields)
+    delete_ids: List[str] = Form(default=[]),
+    db: Session = Depends(get_db), 
+    current_user = Depends(get_current_user),
+):
+    return await manage_salon_gallery_(
+        db=db,
+        user_id=current_user.user_id,
+        files=files,
+        delete_ids=delete_ids,
+    )

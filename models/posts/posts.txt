@@ -1,0 +1,96 @@
+POST
+Column          | Type              | Purpose
+id              | string  (PK)      | Unique Post ID, indexed maybe
+user_id         | string (FK)       | Owner of the post
+caption_text    | TEXT              | Caption or description
+media_id        | string (FK)       | Linked media (image/video) here kind of one post can have one media_id right, and media but here I want to understand if post contains more than one media hehehe!
+visibility      | ENUM              | Who can see (public, friends, private)
+allow_comments  | BOOLEAN           | Allow comments or not with default value of false
+allow_likes     | BOOLEAN           | Allow likes or not with default value of false
+allow_share     | BOOLEAN           | Allow share or not with default value of false
+is_pinned       | BOOLEAN           | If post is pinned to profile with default value of false
+location        | VARCHAR(255)      | Location info (optional)
+status          | ENUM              | Status: active, deleted, archived
+category        | ENUM              | Post category name like (food, car, sports, etc)
+created_at      | TIMESTAMP         | Creation time, default current_timestamp when user create a post 
+updated_at      | TIMESTAMP         | Last update time, default current_timestamp when user create a post
+
+
+POST_LIKES 
+Column          | Type               | Purpose
+id              | String (PK)        | Unique Like ID
+post_id         | String (FK)        | Liked Post
+user_id         | String (FK)        | User who liked
+created_at      | TIMESTAMP          | Time of like
+
+
+POST_COMMENTS
+Column              | Type                      | Purpose
+id                  | String (PK)               | Unique Comment ID
+post_id             | String (FK)               | Commented Post
+user_id             | String (FK)               | User who commented
+parent_comment_id   | String (FK, NULLABLE)     | Reply to another comment
+content             | TEXT                      | Comment text
+created_at          | TIMESTAMP                 | Time of comment
+
+
+POST _SHARE 
+Column          | Type                      | Purpose
+id              | String (PK)               | Unique Share ID
+post_id         | String (FK)               | Shared Post
+share_user_id   | String (FK)               | User who shared
+user_id         | String (FK, NULLABLE)     | User who received share
+created_at      | TIMESTAMP                 | Time of share
+
+
+POST_REPORTS
+Column          | Type                      | Purpose
+id              | String (PK)               | Unique Report ID
+post_id         | String (FK)               | Reported Post
+user_id         | String (FK)               | User who reported
+reason          | TEXT                      | Report reason
+created_at      | TIMESTAMP                 | Time of report
+
+
+
+POST_VIEWS
+Column          | Type                      | Purpose
+id              | String (PK)               | Unique View ID
+post_id         | String (FK)               | Viewed Post
+user_id         | String (FK, NULLABLE)     | Viewer user (if logged in)
+viewer_ip       | VARCHAR(45)               | Viewer IP address (for analytics)
+viewed_at       | TIMESTAMP                 | Time of view
+
+
+
+POST_HASHTAG
+Column          | Type                      | Purpose
+id              | String (PK)               | Unique Record ID
+post_id         | String (FK)               | Related Post
+hashtag_id      | String (FK)               | Linked Hashtag
+created_at      | TIMESTAMP                 | Time added
+
+
+HASHTAG 
+Column          | Type                      | Purpose
+id              | String (PK)               | Unique Hashtag ID
+name            | VARCHAR(100)              | Hashtag name (lowercased)
+created_at      | TIMESTAMP                 | Creation time
+
+
+POST_MENTIONS
+Column              | Type                  | Purpose
+id                  | String (PK)           | Unique Mention ID
+post_id             | String (FK)           | Related Post
+mentioned_user_id   | String (FK)           | Mentioned User
+created_at          | TIMESTAMP             | Time mentioned
+
+
+MEDIA_DATA
+Column              | Type                  | Purpose
+id                  | String (PK)           | Unique Media ID
+media_type          | ENUM                  | Type: image, video, gif
+media_url           | TEXT                  | URL of media
+post_id             | String (FK)           | Linked Post
+media_state         | ENUM                  | State: uploaded, processing, failed
+created_at          | TIMESTAMP             | Upload time

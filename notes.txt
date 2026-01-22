@@ -1,0 +1,103 @@
+Monday 27 Oct:
+
+    Update the create API so that to match the new moedel from the application. 
+
+    The structure of the post API:
+        {
+            "author": "User1__r7j4yu",
+            "category": "two",
+            "caption": "This is the caption of this post right now! #postofthepost #numberofpeople",
+            "hashtags": [
+                "#postofthepost",
+                "#numberofpeople"
+            ],
+            "tagged": [
+                "user6"
+            ],
+            "media": [
+                {
+                    "path": "/data/user/0/com.example.africa_beauty_community/cache/a5dd0d1e-bfa4-405a-b80e-3bd591f3669e/33.jpg",
+                    "aspectRatio": 1.0
+                },
+                {
+                    "path": "/data/user/0/com.example.africa_beauty_community/cache/532a3671-8f55-4801-a220-511f18b1dc6b2487752978095865833.jpg",
+                    "aspectRatio": 1.0
+                }
+            ],
+            "settings": {
+                "ageRestriction": "Everyone",
+                "disableReactions": false,
+                "enableComments": false,
+                "allowSharing": false,
+                "pinned": false,
+                "showLikes": false,
+                "showLocation": false,
+                "visibility": "Public"
+            },
+            "status": "Uploaded"
+        }
+
+
+    So since I have the previous API I have to make sure it align with this one. 
+
+
+
+Tuesday 28 Oct:
+
+    Continue with the update of the API.
+
+Saturday 1 Nov:
+
+    Arrange the classes for the post and post create metadata
+    Idea for Bookings and structure it again. 
+
+Tuesday 4 Nov:
+    This is the Token for Today:
+        eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxNDJiZDJmMS00MmY5LTQ1MjctYWZhNS1lY2EwMjQ3MDk2NDQiLCJleHAiOjE3NjI2OTg0MjB9.d1HSEExpNwgGtWm_IKWKMKUrCABHqHvb8PqsmHz6pE8
+
+
+Friday 7 Nov:
+    ** Hashtags --> Hashtags are send as bunch of list insteady of one in a row sort off, [ no need to be returned on the response ]
+
+    ** Mentions --> Tagged user to the post, and notifies the user but not for now. restructure the response to only return the id of the users that are tagged..
+
+    ** Media Upload --> Files are not uploaded to the database sort off
+
+Sunday 10 Nov:
+    All backend completed for post now its a time to test from fontend
+
+
+Thursday 20 Nov:
+    ** Creating User Endpoint --> Creating the ENDPOINT for the tagged user in the post!
+    
+Thursday 13 Dec:
+    Salon Create Special Offer
+
+    Post retriving (Get Posts)
+
+Friday 19 Dec:
+    Searching Implementations
+    
+Saturday 27 Dec:
+    📅 Availability & calendar view
+
+    🔒 Overlap validation (recommended)
+
+    💬 Negotiation & chat
+
+    💳 Payments
+
+    ⭐ Reviews & recommendations
+
+    // Service --- update this is event ..
+
+    Customer only creates a bookings
+
+    later you want users to post as themselves OR as a salon
+
+
+Friday 2 Jan:
+    for now explore get data change to feed when app grows
+    
+
+
