@@ -6,7 +6,7 @@ from core.enumeration import ImageURL
 from models.auth.profile_picture import ProfilePicture
 from models.auth.user import User
 from models.profile.salon import (
-    Followers,
+    SalonFollower,
     Rate,
     Salon,
 )
@@ -72,9 +72,9 @@ async def profile_salon(db: Session, user: str):
     )
 
     # ───────────────── Counts ─────────────────
-    followers_count = (
-        db.query(func.count(Followers.id))
-        .filter(Followers.follow_this == salon.id)
+    SalonFollower_count = (
+        db.query(func.count(SalonFollower.id))
+        .filter(SalonFollower.salon_id == salon.id)
         .scalar()
         or 0
     )
@@ -105,6 +105,6 @@ async def profile_salon(db: Session, user: str):
         ),
         "gallery": gallery_data, 
 
-        "followers": followers_count,
+        "SalonFollower": SalonFollower_count,
         "rated": float(rated_count), # Ensure this matches the Optional[float] type
     }

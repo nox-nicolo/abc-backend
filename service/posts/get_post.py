@@ -25,7 +25,7 @@ from models.posts.posts import (
 )
 
 from models.auth.user import User
-from models.profile.salon import Followers, Salon, SalonLocation, SalonServiceBenefit, SalonServicePrice, SalonServiceProduct, SponsoredSalon, StylistService
+from models.profile.salon import SalonFollower, Salon, SalonLocation, SalonServiceBenefit, SalonServicePrice, SalonServiceProduct, SponsoredSalon, StylistService
 from pydantic_schemas.posts.single_post import BookingState, EngagementState, OtherPostsSection, PostPreview, PriceRange, ReviewSection, ServiceProduct, ServiceSection, SimilarSection, SinglePostResponse, SponsoredSalonSection, StylistSection
 from service.trending.logic import apply_trending_logic
 
@@ -89,8 +89,8 @@ async def get_posts_(
 
     if option == PostCollectionType.feed:
         followed_users = (
-            select(Followers.follow_this)
-            .where(Followers.follower == user_id)
+            select(SalonFollower.following_user_id)
+            .where(SalonFollower.follower == user_id)
         )
         query = query.filter(
             or_(

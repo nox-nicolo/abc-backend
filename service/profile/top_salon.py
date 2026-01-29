@@ -6,7 +6,7 @@ from models.auth.user import User
 from models.auth.profile_picture import ProfilePicture
 from models.profile.salon import (
     Salon,
-    Followers,
+    SalonFollower,
     Rate,
     SalonLocation,
 )
@@ -24,10 +24,10 @@ def get_top_salons(db: Session, limit: int = 10):
 
     followers_sq = (
         db.query(
-            Followers.follow_this.label("salon_id"),
-            func.count(Followers.id).label("followers_count"),
+            SalonFollower.following_user_id.label("salon_id"),
+            func.count(SalonFollower.id).label("followers_count"),
         )
-        .group_by(Followers.follow_this)
+        .group_by(SalonFollower.following_user_id)
         .subquery()
     )
 

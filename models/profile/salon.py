@@ -47,19 +47,11 @@ class Salon(Base):
     working_hours = relationship("SalonWorkingHour", back_populates="salon", cascade="all, delete-orphan",)
     location = relationship("SalonLocation", back_populates="salon", cascade="all, delete-orphan", uselist=False,)   # one-to-one
     stylists = relationship("SalonStylist", back_populates="salon", cascade="all, delete-orphan",)
-    service_reviews = relationship(
-        "ServiceReview",
-        back_populates="salon",
-        cascade="all, delete-orphan",
-    )
-    sponsored = relationship(
-        "SponsoredSalon",
-        back_populates="salon",
-        uselist=False,
-        cascade="all, delete-orphan",
-    )
-
-
+    service_reviews = relationship("ServiceReview", back_populates="salon", cascade="all, delete-orphan",)
+    sponsored = relationship("SponsoredSalon", back_populates="salon", uselist=False, cascade="all, delete-orphan",)
+    followers = relationship("SalonFollower", back_populates="salon", cascade="all, delete-orphan",)
+    blocked_by = relationship("SalonBlock", back_populates="salon", cascade="all, delete-orphan",)
+    reports = relationship("SalonReport", back_populates="salon", cascade="all, delete-orphan",)
 
 
 #                               END
@@ -89,21 +81,21 @@ class SalonGallery(Base):
 # Followers
 # -------------------------------------------------------------------
 
-class Followers(Base):
-    __tablename__ = "followers"
+# class Followers(Base):
+#     __tablename__ = "followers"
 
-    id = Column(String(36), primary_key=True)
-    follower = Column(String(36), ForeignKey("users.id"), nullable=False)
-    follow_this = Column(String(36), ForeignKey("users.id"), nullable=False)
-    created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
+#     id = Column(String(36), primary_key=True)
+#     follower = Column(String(36), ForeignKey("users.id"), nullable=False)
+#     follow_this = Column(String(36), ForeignKey("users.id"), nullable=False)
+#     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
 
-    # Relationships (EXPLICIT foreign_keys)
-    follower_user = relationship("User", foreign_keys=[follower], back_populates="following")
-    follow_this_user = relationship("User", foreign_keys=[follow_this], back_populates="follow")
+#     # Relationships (EXPLICIT foreign_keys)
+#     follower_user = relationship("User", foreign_keys=[follower], back_populates="following")
+#     follow_this_user = relationship("User", foreign_keys=[follow_this], back_populates="follow")
     
-    __table_args__ = (
-        UniqueConstraint("follower", "follow_this", name="uq_unique_follow"),
-    )
+#     __table_args__ = (
+#         UniqueConstraint("follower", "follow_this", name="uq_unique_follow"),
+#     )
 
 
 #                               END
@@ -543,3 +535,124 @@ class BillingSubscription(Base):
     end_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class SalonFollower(Base):
+    __tablename__ = "salon_followers"
+
+    id = Column(String(36), primary_key=True, index=True)
+
+    salon_id = Column(
+        String(36),
+        ForeignKey("salons.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    user_id = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    notifications_enabled = Column(BOOLEAN, default=True, nullable=False)
+
+    created_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    # ───────────── Relationships ─────────────
+    salon = relationship(
+        "Salon",
+        back_populates="followers",
+    )
+
+    user = relationship(
+        "User",
+        back_populates="followed_salons",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("salon_id", "user_id", name="uq_salon_user_follow"),
+    )
+
+
+class SalonBlock(Base):
+    __tablename__ = "salon_blocks"
+
+    id = Column(String(36), primary_key=True, index=True)
+
+    salon_id = Column(
+        String(36),
+        ForeignKey("salons.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    user_id = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    created_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    # Relationships
+    salon = relationship(
+        "Salon",
+        back_populates="blocked_by",
+    )
+
+    user = relationship(
+        "User",
+        back_populates="blocked_salons",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("salon_id", "user_id", name="uq_user_block_salon"),
+    )
+
+
+class SalonReport(Base):
+    __tablename__ = "salon_reports"
+
+    id = Column(String(36), primary_key=True, index=True)
+
+    salon_id = Column(
+        String(36),
+        ForeignKey("salons.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    user_id = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    reason = Column(String(255), nullable=False)
+    description = Column(String(1000), nullable=True)
+
+    created_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    # Relationships
+    salon = relationship("Salon", back_populates="reports")
+    user = relationship("User", back_populates="salon_reports")
+
+    __table_args__ = (
+        UniqueConstraint("salon_id", "user_id", name="uq_user_report_salon"),
+    )

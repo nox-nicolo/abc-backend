@@ -42,17 +42,17 @@ class User(Base):
     mentions = relationship("PostMention", back_populates="mentioned_user", cascade="all, delete-orphan")
     bookmarks = relationship("PostBoorkmark", back_populates="user", cascade="all, delete-orphan")
     salon = relationship("Salon", back_populates="user", uselist=False, cascade="all, delete-orphan")
-    following = relationship("Followers", back_populates="follower_user", foreign_keys="Followers.follower", cascade="all, delete-orphan")
-    follow = relationship("Followers", back_populates="follow_this_user", foreign_keys="Followers.follow_this", cascade="all, delete-orphan")
+    # following = relationship("Followers", back_populates="follower_user", foreign_keys="Followers.follower", cascade="all, delete-orphan")
+    # follow = relationship("Followers", back_populates="follow_this_user", foreign_keys="Followers.follow_this", cascade="all, delete-orphan")
     search_histories = relationship("SearchHistory",back_populates="history_user",cascade="all, delete-orphan",)
     bookings = relationship("Booking", back_populates="customer",cascade="all, delete-orphan",)
     rated = relationship("Rate", back_populates="user", cascade="all, delete-orphan")
     stylist_profile = relationship("SalonStylist",  back_populates="user", uselist=False,)
-    service_reviews = relationship(
-        "ServiceReview",
-        back_populates="user",
-        cascade="all, delete-orphan",
-    )
+    service_reviews = relationship("ServiceReview", back_populates="user", cascade="all, delete-orphan",)
+    followed_salons = relationship("SalonFollower", back_populates="user", cascade="all, delete-orphan",)
+    blocked_salons = relationship("SalonBlock", back_populates="user", cascade="all, delete-orphan",)
+    salon_reports = relationship("SalonReport", back_populates="user", cascade="all, delete-orphan",)
+
     
     def __repr__(self):
         return f"<User id={self.id}, username={self.username}, email={self.email}, account_access={self.account_access}>"

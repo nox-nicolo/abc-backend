@@ -9,10 +9,12 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from pydantic_schemas.auth.jwt_token import TokenData
 from pydantic_schemas.profile.salon import  SalonGalleryResponse, SalonProfileResponse
+from pydantic_schemas.profile.salon_view import SalonViewProfileResponseSchema
 from pydantic_schemas.profile.settings import AccountMediaResponse, SalonContactLocationResponse, SalonContactUpdateRequest, SalonProfileResponse, SalonProfileUpdateRequest, SalonWorkingHoursResponse, SalonWorkingHoursUpdateRequest
 from pydantic_schemas.profile.top_salon import TopSalonResponse
 from service.auth.JWT.oauth2 import get_current_user
 from service.profile.salon import profile_salon
+from service.profile.salon_view import view_salon_profile
 from service.profile.settings.contact_location import update_salon_contact_
 from service.profile.settings.salon_gallery import manage_salon_gallery_
 from service.profile.settings.salon_profile import update_salon_profile_
@@ -39,6 +41,34 @@ async def salon_profile(db: Session = Depends(get_db), current_user: TokenData =
     # Let FastAPI handle the response_model serialization
     # If profile_salon returns a dict, FastAPI will validate it against SalonProfileResponse
     return await profile_salon(db=db, user=user_id)
+
+
+# -------------------------------------------------------------------
+# Public: View Salon Profile by Username
+# -------------------------------------------------------------------
+@profile.get(
+    "/salon/{salon_id}",
+    response_model=SalonViewProfileResponseSchema,
+    status_code=status.HTTP_200_OK,
+)
+async def view_salon_by_username(
+    salon_id: str,
+    db: Session = Depends(get_db),
+    current_user: TokenData | None = Depends(get_current_user),
+):
+    """
+    Public salon profile view.
+    - If authenticated → viewer-aware (follow/block state)
+    - If not authenticated → viewer defaults applied
+    """
+    viewer_id = current_user.user_id if current_user else None
+
+    return await view_salon_profile(
+        salon_id=salon_id,
+        db=db,
+        viewer_id=viewer_id,
+    )
+
 
 
 @profile.get("/top", response_model=TopSalonResponse)
