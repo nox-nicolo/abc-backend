@@ -15,6 +15,7 @@ from pydantic_schemas.profile.settings import AccountMediaResponse, SalonContact
 from pydantic_schemas.profile.top_salon import TopSalonResponse
 from service.auth.JWT.oauth2 import get_current_user
 from service.profile.salon import profile_salon
+from service.profile.salon_folow_unfollow import follow_salon, unfollow_salon
 from service.profile.salon_view import view_salon_profile
 from service.profile.settings.contact_location import update_salon_contact_
 from service.profile.settings.salon_gallery import manage_salon_gallery_
@@ -98,6 +99,34 @@ async def salon_followers(
 # -------------------------------------------------------------------
 
 
+# -------------------------------------------------------------------
+# Follow / Unfollow Salon
+# -------------------------------------------------------------------
+@profile.post("/salon/{salon_id}/follow")
+async def follow(
+    salon_id: str,
+    db: Session = Depends(get_db),
+    user: TokenData =Depends(get_current_user),
+):
+    await follow_salon(db=db, salon_id=salon_id, user_id=user.user_id)
+    return {"success": True}
+
+
+@profile.delete("/salon/{salon_id}/follow")
+async def unfollow(
+    salon_id: str,
+    db: Session = Depends(get_db),
+    user: TokenData = Depends(get_current_user),
+):
+    await unfollow_salon(db=db, salon_id=salon_id, user_id=user.user_id)
+    return {"success": True}
+
+# -------------------------------------------------------------------
+
+
+# -------------------------------------------------------------------
+# Top Salons
+# -------------------------------------------------------------------
 @profile.get("/top", response_model=TopSalonResponse)
 async def fetch_top_salons(
     limit: int = Query(10, le=20),
@@ -118,8 +147,11 @@ async def fetch_top_salons(
             content={"detail": f"An unexpected error occurred: {e}"}
         )
         
+# -------------------------------------------------------------------
         
-        
+# -------------------------------------------------------------------
+# Authenticated: Salon Profile Settings
+# -------------------------------------------------------------------
 @profile.patch(
     "/upload_account_media",
     response_model=AccountMediaResponse
@@ -136,9 +168,14 @@ async def upload_account_media(
         cover_ads=cover_ads,
         db=db,
     )
+    
+# -------------------------------------------------------------------
 
 
 
+# -------------------------------------------------------------------
+# Authenticated: Salon Profile Settings - Update Profile, Contact, Working Hours, Gallery
+# -------------------------------------------------------------------
 @profile.patch(
     "/salon_profile",
     response_model=SalonProfileResponse,
@@ -154,7 +191,12 @@ async def update_salon_profile(
         db=db,
     )
 
+# -------------------------------------------------------------------
 
+
+# -------------------------------------------------------------------
+# Authenticated: Salon Profile Settings - Update Contact Location
+# -------------------------------------------------------------------
 @profile.patch(
     "/contact",
     response_model=SalonContactLocationResponse,
@@ -168,8 +210,12 @@ async def update_salon_contact(
         payload=payload,
         db=db,
     )
+# -------------------------------------------------------------------
 
 
+# -------------------------------------------------------------------
+# Authenticated: Salon Profile Settings - Update Working Hours
+# -------------------------------------------------------------------
 @profile.put(
     "/working_hours",
     response_model=SalonWorkingHoursResponse,
@@ -185,8 +231,12 @@ async def update_working_hours(
         db=db,
     )
 
+# -------------------------------------------------------------------
 
 
+# -------------------------------------------------------------------
+# Authenticated: Salon Profile Settings - Manage Gallery
+# -------------------------------------------------------------------
 @profile.patch(
     "/salon_gallery",
     response_model=List[SalonGalleryResponse],
@@ -205,3 +255,5 @@ async def update_gallery(
         files=files,
         delete_ids=delete_ids,
     )
+    
+# -------------------------------------------------------------------
