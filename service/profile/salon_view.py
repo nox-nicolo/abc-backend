@@ -12,6 +12,9 @@ from models.profile.salon import (
     SalonFollower,
     SalonBlock,
     Rate,
+    SalonServicePrice,
+    SalonStylist,
+    StylistService,
 )
 
 
@@ -191,6 +194,82 @@ async def view_salon_profile(
             "lat": salon.location.latitude,
             "lng": salon.location.longitude,
         }
+        
+    
+    # ───────────────── Services ─────────────────
+    service_prices = (
+        db.query(SalonServicePrice)
+        .options(
+            joinedload(SalonServicePrice.service),
+            joinedload(SalonServicePrice.sub_service),
+            joinedload(SalonServicePrice.benefits),
+            joinedload(SalonServicePrice.products),
+            joinedload(SalonServicePrice.bookings),
+            joinedload(SalonServicePrice.reviews),
+        )
+        .filter(SalonServicePrice.salon_id == salon.id)
+        .all()
+    )
+    
+    stylist_map = {}
+
+    stylist_services = (
+        db.query(StylistService)
+        .join(SalonStylist)
+        .join(User)
+        .options(
+            joinedload(StylistService.stylist).joinedload(SalonStylist.user)
+        )
+        .filter(SalonStylist.salon_id == salon.id)
+        .all()
+    )
+
+    for ss in stylist_services:
+        stylist_map.setdefault(ss.salon_service_price_id, []).append(
+            {
+                "id": ss.stylist.id,
+                "name": ss.stylist.user.name,
+                "avatar": (
+                    f"{PROFILE_IMAGE_BASE}{ss.stylist.user.profile_picture.file_name}"
+                    if ss.stylist.user.profile_picture
+                    else None
+                ),
+            }
+        )
+        
+    services_by_category = {}
+
+    for sp in service_prices:
+        if not sp.service:
+            continue
+
+        cat_id = sp.service.id
+        cat_name = sp.service.name
+
+        services_by_category.setdefault(cat_id, {
+            "category_id": cat_id,
+            "category_name": cat_name,
+            "services": [],
+        })
+
+        services_by_category[cat_id]["services"].append(
+            {
+                "id": sp.id,
+                "category_id": cat_id,
+                "category_name": cat_name,
+                "sub_service_id": sp.sub_service.id if sp.sub_service else None,
+                "name": sp.sub_service.name if sp.sub_service else cat_name,
+                "image": None,  # optional: later from service/sub_service media
+                "price_min": sp.price_min,
+                "price_max": sp.price_max,
+                "currency": sp.currency,
+                "duration_minutes": sp.duration_minutes,
+                "stylists": stylist_map.get(sp.id, []),
+            }
+        )
+
+
+
 
     # ───────────────── Final response ─────────────────
     return {
@@ -239,4 +318,8 @@ async def view_salon_profile(
             "can_report": not is_blocked,
             "can_block": True,
         },
+        "services": {
+            "categories": list(services_by_category.values())
+        }
+
     }

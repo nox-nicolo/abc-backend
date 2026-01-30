@@ -90,15 +90,6 @@ class SalonActionsSchema(BaseModel):
     can_block: bool
 
 
-class SalonViewProfileResponseSchema(BaseModel):
-    salon: SalonCoreSchema
-    viewer: SalonViewerSchema
-    metrics: SalonMetricsSchema
-    availability: SalonAvailabilitySchema
-    contacts: SalonContactsSchema
-    media: SalonMediaSchema
-    actions: SalonActionsSchema
-
 
 
 # Pydantinc schemas for User view profile response
@@ -115,3 +106,58 @@ class SalonFollowersResponseSchema(BaseModel):
     count: int
     items: List[SalonFollowerItemSchema]
     next_cursor: Optional[str]
+
+
+class SalonServiceStylistSchema(BaseModel):
+    id: str
+    name: str
+    avatar: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+class SalonServiceItemSchema(BaseModel):
+    id: str
+
+    category_id: Optional[str]
+    category_name: Optional[str]
+
+    sub_service_id: Optional[str]
+    name: Optional[str]
+
+    image: Optional[str]
+
+    price_min: Optional[int]
+    price_max: Optional[int]
+    currency: str
+
+    duration_minutes: Optional[int]
+
+    stylists: List[SalonServiceStylistSchema]
+
+    class Config:
+        from_attributes = True
+
+
+class SalonServiceCategorySchema(BaseModel):
+    category_id: str
+    category_name: str
+    services: List[SalonServiceItemSchema]
+
+
+class SalonServicesSchema(BaseModel):
+    categories: List[SalonServiceCategorySchema]
+
+
+
+class SalonViewProfileResponseSchema(BaseModel):
+    salon: SalonCoreSchema
+    viewer: SalonViewerSchema
+    metrics: SalonMetricsSchema
+    availability: SalonAvailabilitySchema
+    contacts: SalonContactsSchema
+    media: SalonMediaSchema
+    actions: SalonActionsSchema
+    services: SalonServicesSchema
+
