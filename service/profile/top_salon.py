@@ -24,10 +24,10 @@ def get_top_salons(db: Session, limit: int = 10):
 
     followers_sq = (
         db.query(
-            SalonFollower.following_user_id.label("salon_id"),
+            SalonFollower.salon_id.label("salon_id"),
             func.count(SalonFollower.id).label("followers_count"),
         )
-        .group_by(SalonFollower.following_user_id)
+        .group_by(SalonFollower.salon_id)
         .subquery()
     )
 
