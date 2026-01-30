@@ -98,3 +98,20 @@ class SalonViewProfileResponseSchema(BaseModel):
     contacts: SalonContactsSchema
     media: SalonMediaSchema
     actions: SalonActionsSchema
+
+
+
+# Pydantinc schemas for User view profile response
+
+class SalonFollowerItemSchema(BaseModel):
+    user_id: str
+    username: str
+    name: str
+    avatar: Optional[str]
+    is_following: bool
+
+
+class SalonFollowersResponseSchema(BaseModel):
+    count: int
+    items: List[SalonFollowerItemSchema]
+    next_cursor: Optional[str]

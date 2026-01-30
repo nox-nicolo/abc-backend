@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from pydantic_schemas.auth.jwt_token import TokenData
+from pydantic_schemas.profile.followers_view_profile import get_salon_followers
 from pydantic_schemas.profile.salon import  SalonGalleryResponse, SalonProfileResponse
-from pydantic_schemas.profile.salon_view import SalonViewProfileResponseSchema
+from pydantic_schemas.profile.salon_view import SalonFollowersResponseSchema, SalonViewProfileResponseSchema
 from pydantic_schemas.profile.settings import AccountMediaResponse, SalonContactLocationResponse, SalonContactUpdateRequest, SalonProfileResponse, SalonProfileUpdateRequest, SalonWorkingHoursResponse, SalonWorkingHoursUpdateRequest
 from pydantic_schemas.profile.top_salon import TopSalonResponse
 from service.auth.JWT.oauth2 import get_current_user
@@ -69,6 +70,32 @@ async def view_salon_by_username(
         viewer_id=viewer_id,
     )
 
+# -------------------------------------------------------------------
+# Public: Salon Followers
+# -------------------------------------------------------------------
+@profile.get(
+    "/salon/{salon_id}/followers",
+    response_model=SalonFollowersResponseSchema,
+    status_code=status.HTTP_200_OK,
+)
+async def salon_followers(
+    salon_id: str,
+    limit: int = Query(20, le=50),
+    cursor: str | None = Query(None),
+    db: Session = Depends(get_db),
+    current_user: TokenData | None = Depends(get_current_user),
+):
+    viewer_id = current_user.user_id if current_user else None
+
+    return get_salon_followers(
+        db=db,
+        salon_id=salon_id,
+        viewer_id=viewer_id,
+        limit=limit,
+        cursor=cursor,
+    )
+    
+# -------------------------------------------------------------------
 
 
 @profile.get("/top", response_model=TopSalonResponse)
