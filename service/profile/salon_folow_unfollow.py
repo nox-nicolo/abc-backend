@@ -52,3 +52,4 @@ async def unfollow_salon(
 
     db.delete(follow)
     db.commit()
+    

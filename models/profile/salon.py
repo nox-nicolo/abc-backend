@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
-from sqlalchemy import BOOLEAN, FLOAT, TIME, Column, ForeignKey, Index, String, DateTime, INTEGER, UniqueConstraint
+from sqlalchemy import BOOLEAN, FLOAT, TIME, Column, Enum, ForeignKey, Index, String, DateTime, INTEGER, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm import relationship
+from core.enumeration import ServiceCreatedStatus
 from models.base import Base
 from sqlalchemy import Column, String, DateTime, ForeignKey, FLOAT
 from sqlalchemy.orm import relationship
@@ -143,6 +144,8 @@ class SalonServicePrice(Base):
 
     currency = Column(String(10), default="TZS")
     duration_minutes = Column(INTEGER, nullable=True)
+    
+    status = Column( Enum(ServiceCreatedStatus), default=ServiceCreatedStatus.INACTIVE, nullable=False, index=True,) # inactive, archived, active
 
     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
 
@@ -156,6 +159,14 @@ class SalonServicePrice(Base):
     reviews = relationship("ServiceReview", back_populates="salon_service_price", cascade="all, delete-orphan", )
 
     Index("ix_service_lookup", "salon_id", "service_id", "sub_service_id")
+    
+    __table_args__ = (
+        CheckConstraint(
+            "(service_id IS NOT NULL OR sub_service_id IS NOT NULL)",
+            name="ck_service_or_subservice_required"
+        ),
+        Index("ix_service_lookup", "salon_id", "service_id", "sub_service_id"),
+    )
 
     
 #                               END

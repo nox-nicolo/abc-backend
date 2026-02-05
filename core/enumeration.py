@@ -102,3 +102,8 @@ class BookingStatus(PyEnum):
     REJECTED = "rejected"  # Salon declined the request
     CANCELLED = "cancelled"
     NO_SHOW = "no_show"  # Optional later Customer didn’t come
+    
+class ServiceCreatedStatus(PyEnum):
+    ACTIVE = 'active'
+    INACTIVE = 'inactive'
+    ARCHIVED = 'archived'
