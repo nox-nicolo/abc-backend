@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import uuid
 from sqlalchemy import BOOLEAN, FLOAT, TIME, Column, Enum, ForeignKey, Index, String, DateTime, INTEGER, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm import relationship
 from core.enumeration import ServiceCreatedStatus
@@ -15,7 +16,7 @@ from datetime import datetime, timezone
 class Salon(Base):
     __tablename__ = "salons"
 
-    id = Column(String(36), primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()),)
 
     # Business identity
     title = Column(String(200), nullable=False)
@@ -65,7 +66,7 @@ class Salon(Base):
 class SalonGallery(Base):
     __tablename__ = "salon_galleries"
 
-    id = Column(String(36), primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
 # -------------------------------------------------------------------
     salon_id = Column(String(36), ForeignKey("salons.id", onupdate="CASCADE",  ondelete="CASCADE"), nullable=False,)
     file_name = Column(String(200), nullable=False)
@@ -109,7 +110,7 @@ class SalonGallery(Base):
 class Rate(Base):
     __tablename__ = "rated"
 
-    id = Column(String(36), primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()),)
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
     salon_id = Column(String(36), ForeignKey("salons.id"), nullable=False)
     value = Column(INTEGER, nullable=True)
@@ -133,7 +134,7 @@ class Rate(Base):
 class SalonServicePrice(Base):
     __tablename__ = "salon_service_prices"
 
-    id = Column(String(36), primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()),)
 
     salon_id = Column(String(36), ForeignKey("salons.id", ondelete="CASCADE"), nullable=False, index=True)
     service_id = Column(String(36), ForeignKey("services.id", ondelete="CASCADE"), nullable=True)
@@ -179,7 +180,7 @@ class SalonServicePrice(Base):
 class SalonServiceBenefit(Base):
     __tablename__ = "salon_service_benefits"
 
-    id = Column(String(36), primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()),)
 
     salon_service_price_id = Column(
         String(36),
@@ -215,7 +216,7 @@ class SalonServiceBenefit(Base):
 class SalonServiceProduct(Base):
     __tablename__ = "salon_service_products"
 
-    id = Column(String(36), primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()),)
 
     salon_service_price_id = Column(
         String(36),
@@ -250,7 +251,7 @@ class SalonServiceProduct(Base):
 class SalonStylist(Base):
     __tablename__ = "salon_stylists"
 
-    id = Column(String(36), primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()),)
 
     salon_id = Column(
         String(36),
@@ -308,7 +309,7 @@ class SalonStylist(Base):
 class StylistService(Base):
     __tablename__ = "stylist_services"
 
-    id = Column(String(36), primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()),)
 
     stylist_id = Column(
         String(36),
@@ -353,7 +354,7 @@ class StylistService(Base):
 class StylistRating(Base):
     __tablename__ = "stylist_ratings"
 
-    id = Column(String(36), primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()),)
 
     stylist_id = Column(
         String(36),
@@ -392,7 +393,7 @@ class StylistRating(Base):
 class SalonContact(Base):
     __tablename__ = "salon_contacts"
 
-    id = Column(String(36), primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()),)
 
     salon_id = Column(
         String(36),
@@ -430,7 +431,7 @@ class SalonContact(Base):
 class SalonWorkingHour(Base):
     __tablename__ = "salon_working_hours"
 
-    id = Column(String(36), primary_key=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     salon_id = Column(
         String(36),
@@ -466,7 +467,7 @@ class SalonWorkingHour(Base):
 class SalonLocation(Base):
     __tablename__ = "salon_locations"
 
-    id = Column(String(36), primary_key=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     salon_id = Column(
         String(36),
@@ -502,7 +503,7 @@ class SalonLocation(Base):
 # -------------------------------------------------------------------
 class SponsoredSalon(Base):
     __tablename__ = "sponsored_salons"
-    id = Column(String(36), primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
     salon_id = Column(String(36), ForeignKey("salons.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     # billing_subscription_id = Column(String(36), ForeignKey("billing_subscriptions.id", ondelete="SET NULL"), nullable=True, index=True,)
     plan_type = Column(String(50), nullable=False, default="basic", index=True)
@@ -527,7 +528,7 @@ class SponsoredSalon(Base):
 class BillingSubscription(Base):
     __tablename__ = "billing_subscriptions"
 
-    id = Column(String(36), primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
 
     salon_id = Column(
         String(36),
@@ -551,7 +552,7 @@ class BillingSubscription(Base):
 class SalonFollower(Base):
     __tablename__ = "salon_followers"
 
-    id = Column(String(36), primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
 
     salon_id = Column(
         String(36),
@@ -594,7 +595,7 @@ class SalonFollower(Base):
 class SalonBlock(Base):
     __tablename__ = "salon_blocks"
 
-    id = Column(String(36), primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
 
     salon_id = Column(
         String(36),
@@ -635,7 +636,7 @@ class SalonBlock(Base):
 class SalonReport(Base):
     __tablename__ = "salon_reports"
 
-    id = Column(String(36), primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
 
     salon_id = Column(
         String(36),

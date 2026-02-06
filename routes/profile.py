@@ -16,6 +16,7 @@ from pydantic_schemas.profile.settings import AccountMediaResponse, SalonContact
 from pydantic_schemas.profile.top_salon import TopSalonResponse
 from service.auth.JWT.oauth2 import get_current_user
 from service.profile.salon import profile_salon
+from service.profile.salon_config_service import create_salon_service, update_salon_service
 from service.profile.salon_folow_unfollow import follow_salon, unfollow_salon
 from service.profile.salon_service_config import list_selectable_services
 from service.profile.salon_view import view_salon_profile
@@ -94,7 +95,7 @@ def list_services_for_selection(
 # -------------------------------------------------------------------
 @profile.post(
     "/salon/services",
-    response_model=SalonServiceConfigOut,
+    # response_model=SalonServiceConfigOut,
     status_code=status.HTTP_201_CREATED,
 )
 def create_salon_service_route(
@@ -105,12 +106,7 @@ def create_salon_service_route(
     """
     Configure a service for the first time (CREATE).
     """
-    salon = getattr(current_user, "salon", None)
-    if not salon:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Salon not found",
-        )
+    
 
     # Router stays thin – service layer will:
     # - validate service / sub-service
@@ -118,15 +114,11 @@ def create_salon_service_route(
     # - create SalonServicePrice
     # - sync benefits, products, stylists
     #
-    # return create_salon_service(
-    #     db=db,
-    #     salon=salon,
-    #     payload=payload,
-    # )
-
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Create salon service not implemented yet",
+    
+    return create_salon_service(
+        db=db,
+        salon=current_user.user_id,
+        payload=payload,
     )
     
 # -------------------------------------------------------------------
@@ -149,12 +141,7 @@ def update_salon_service_route(
     """
     Update an already configured salon service.
     """
-    salon = getattr(current_user, "salon", None)
-    if not salon:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Salon not found",
-        )
+    
 
     # Router stays thin – service layer will:
     # - fetch service by id + salon ownership
@@ -162,16 +149,11 @@ def update_salon_service_route(
     # - resync benefits, products, stylists
     # - handle status transitions
     #
-    # return update_salon_service(
-    #     db=db,
-    #     salon=salon,
-    #     salon_service_price_id=salon_service_price_id,
-    #     payload=payload,
-    # )
-
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Update salon service not implemented yet",
+    return update_salon_service(
+        db=db,
+        salon=current_user.user_id,
+        salon_service_price_id=salon_service_price_id,
+        payload=payload,
     )
 
 # -------------------------------------------------------------------
