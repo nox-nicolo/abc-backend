@@ -4,10 +4,13 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
+from core.enumeration import ImageURL
 from models.profile.salon import Salon, SalonServicePrice
 from models.services.service import Services, SubServices
 from pydantic_schemas.profile.salon_config_service import SalonServiceSelectableItem, SalonServiceSelectableList
 
+image_url_major = f"{ImageURL.SERVICE_URL.value}major/"
+image_url_minor = f"{ImageURL.SERVICE_URL.value}minor/"
 
 def list_selectable_services(
     *,
@@ -94,7 +97,7 @@ def list_selectable_services(
                     SalonServiceSelectableItem(
                         service_id=service.id,
                         service_name=service.name,
-                        service_image=service.service_picture,
+                        service_image=image_url_minor + sub.file_name if sub.file_name else None,
 
                         sub_service_id=sub.id,
                         sub_service_name=sub.name,
@@ -120,7 +123,7 @@ def list_selectable_services(
                 SalonServiceSelectableItem(
                     service_id=service.id,
                     service_name=service.name,
-                    service_image=service.service_picture,
+                    service_image=image_url_major + service.service_picture if service.service_picture else None,
 
                     sub_service_id=None,
                     sub_service_name=None,

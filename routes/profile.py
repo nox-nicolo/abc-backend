@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from pydantic_schemas.auth.jwt_token import TokenData
+from pydantic_schemas.profile.config_service_salon import SalonServiceConfigDetailResponse, SalonServiceSelectableResponse
 from pydantic_schemas.profile.followers_view_profile import get_salon_followers
 from pydantic_schemas.profile.salon import  SalonGalleryResponse, SalonProfileResponse
 from pydantic_schemas.profile.salon_config_service import SalonServiceConfigIn, SalonServiceConfigOut, SalonServiceSelectableList
@@ -15,6 +16,7 @@ from pydantic_schemas.profile.salon_view import SalonFollowersResponseSchema, Sa
 from pydantic_schemas.profile.settings import AccountMediaResponse, SalonContactLocationResponse, SalonContactUpdateRequest, SalonProfileResponse, SalonProfileUpdateRequest, SalonWorkingHoursResponse, SalonWorkingHoursUpdateRequest
 from pydantic_schemas.profile.top_salon import TopSalonResponse
 from service.auth.JWT.oauth2 import get_current_user
+from service.profile.configure_service_salon import get_salon_services_for_config
 from service.profile.salon import profile_salon
 from service.profile.salon_config_service import create_salon_service, update_salon_service
 from service.profile.salon_folow_unfollow import follow_salon, unfollow_salon
@@ -159,6 +161,45 @@ def update_salon_service_route(
 # -------------------------------------------------------------------
 
 
+# ----------------------------------------------------------------
+# Get single service configuration (create + edit UI)
+# ----------------------------------------------------------------
+@profile.get(
+    "/salon/services/{service_id}/sub/{sub_service_id}/configure",
+    # response_model=SalonServiceConfigDetailResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_salon_service_config(
+    service_id: str,
+    sub_service_id: str,
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    """
+    Layer 2:
+    - Returns details for ONE service + sub-service
+    - Includes config if already configured
+    - Used by Create & Update UI
+    """
+
+    salon_user_id = current_user.user_id
+
+    if not salon_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Salon not found",
+        )
+
+    return get_salon_services_for_config(
+        db=db,
+        salon_user_id=salon_user_id,
+        service_id=service_id,
+        sub_service_id=sub_service_id,
+    )
+
+# ----------------------------------------------------------------
+
+
 # -------------------------------------------------------------------
 # Public: View Salon Profile by Username
 # -------------------------------------------------------------------
@@ -184,6 +225,7 @@ async def view_salon_by_username(
         db=db,
         viewer_id=viewer_id,
     )
+# -------------------------------------------------------------------
 
 # -------------------------------------------------------------------
 # Public: Salon Followers
