@@ -4,7 +4,8 @@ passlib
 python-jose
 gunicorn
 sqlalchemy
-sqlachemy
+# sqlachemy
+
 
 
 PyJWT
