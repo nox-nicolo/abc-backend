@@ -3,6 +3,7 @@ uvicorn[standard]
 passlib
 python-jose
 gunicorn
+sqlalchemy
 sqlachemy
 
 
