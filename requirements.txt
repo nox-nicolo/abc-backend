@@ -5,7 +5,7 @@ python-jose
 gunicorn
 sqlalchemy
 psycopg2-binary
-
+bcryptgit
 
 
 PyJWT
