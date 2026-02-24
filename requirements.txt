@@ -4,7 +4,7 @@ passlib
 python-jose
 gunicorn
 sqlalchemy
-# sqlachemy
+psycopg2-binary
 
 
 
