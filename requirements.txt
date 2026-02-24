@@ -6,7 +6,7 @@ gunicorn
 sqlalchemy
 psycopg2-binary
 bcrypt
-
+fastapi_mail
 
 PyJWT
 python-decouple
