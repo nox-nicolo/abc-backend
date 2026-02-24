@@ -3,6 +3,8 @@ uvicorn[standard]
 passlib
 python-jose
 gunicorn
+sqlalchemy
+
 
 PyJWT
 python-decouple
