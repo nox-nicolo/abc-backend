@@ -1,7 +1,7 @@
 
 
 from http.client import HTTPException
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, File, Form, Query, UploadFile, status, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from pydantic_schemas.profile.config_service_salon import SalonServiceConfigDeta
 from pydantic_schemas.profile.followers_view_profile import get_salon_followers
 from pydantic_schemas.profile.salon import  SalonGalleryResponse, SalonProfileResponse
 from pydantic_schemas.profile.salon_config_service import SalonServiceConfigIn, SalonServiceConfigOut, SalonServiceSelectableList
+from pydantic_schemas.profile.salon_stylists import SalonStylistCreate, SalonStylistListOut, SalonStylistOut, SalonStylistUpdate
 from pydantic_schemas.profile.salon_view import SalonFollowersResponseSchema, SalonViewProfileResponseSchema
 from pydantic_schemas.profile.settings import AccountMediaResponse, SalonContactLocationResponse, SalonContactUpdateRequest, SalonProfileResponse, SalonProfileUpdateRequest, SalonWorkingHoursResponse, SalonWorkingHoursUpdateRequest
 from pydantic_schemas.profile.top_salon import TopSalonResponse
@@ -19,6 +20,7 @@ from service.auth.JWT.oauth2 import get_current_user
 from service.profile.configure_service_salon import get_salon_services_for_config
 from service.profile.salon import profile_salon
 from service.profile.salon_config_service import create_salon_service, update_salon_service
+from service.profile.salon_create_stylists import SalonStylistService
 from service.profile.salon_folow_unfollow import follow_salon, unfollow_salon
 from service.profile.salon_service_config import list_selectable_services
 from service.profile.salon_view import view_salon_profile
@@ -79,7 +81,7 @@ def list_services_for_selection(
     #     )
 
 
-    # NOTE: router-only. Business logic goes into service layer.
+    # NOTE: profile-only. Business logic goes into service layer.
     return list_selectable_services(
         db=db,
         salon_id=current_user.user_id,
@@ -110,7 +112,7 @@ def create_salon_service_route(
     """
     
 
-    # Router stays thin – service layer will:
+    # profile stays thin – service layer will:
     # - validate service / sub-service
     # - ensure not already configured
     # - create SalonServicePrice
@@ -145,7 +147,7 @@ def update_salon_service_route(
     """
     
 
-    # Router stays thin – service layer will:
+    # profile stays thin – service layer will:
     # - fetch service by id + salon ownership
     # - update core fields
     # - resync benefits, products, stylists
@@ -413,3 +415,78 @@ async def update_gallery(
     )
     
 # -------------------------------------------------------------------
+
+
+# -------------------------------------------------------------------
+# CREATE STYLIST
+# -------------------------------------------------------------------
+@profile.post(
+    "/stylist",
+    response_model=SalonStylistOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_salon_stylist(
+    payload: SalonStylistCreate,
+    db: Session = Depends(get_db),
+):
+    return SalonStylistService(db).create(payload)
+
+
+# -------------------------------------------------------------------
+# LIST (optional filters + pagination)
+# -------------------------------------------------------------------
+# @profile.get("", response_model=SalonStylistListOut)
+# def list_salon_stylists(
+#     salon_id: Optional[str] = Query(default=None),
+#     user_id: Optional[str] = Query(default=None),
+#     is_active: Optional[bool] = Query(default=None),
+#     limit: int = Query(default=20, ge=1, le=100),
+#     offset: int = Query(default=0, ge=0),
+#     db: Session = Depends(get_db),
+# ):
+#     # return SalonStylistService(db).list(
+#     #     salon_id=salon_id,
+#     #     user_id=user_id,
+#     #     is_active=is_active,
+#     #     limit=limit,
+#     #     offset=offset,
+#     # )
+#     return None
+
+
+# -------------------------------------------------------------------
+# GET ONE STYLIST (for edit form, or just to view details)
+# -------------------------------------------------------------------
+# @profile.get("/{stylist_id}", response_model=SalonStylistOut)
+# def get_salon_stylist(
+#     stylist_id: str,
+#     db: Session = Depends(get_db),
+# ):
+#     # return SalonStylistService(db).get(stylist_id)
+#     return None
+
+
+# -------------------------------------------------------------------
+# UPDATE (PATCH) STYLIST - partial update, only fields sent will be updated
+# -------------------------------------------------------------------
+# @profile.patch("/{stylist_id}", response_model=SalonStylistOut)
+# def update_salon_stylist(
+#     stylist_id: str,
+#     payload: SalonStylistUpdate,
+#     db: Session = Depends(get_db),
+# ):
+#     # return SalonStylistService(db).update(stylist_id, payload)
+#     return None
+
+
+# -------------------------------------------------------------------
+# REMOVE STYLIST (soft delete by default)
+# -------------------------------------------------------------------
+# @profile.delete("/{stylist_id}", status_code=status.HTTP_204_NO_CONTENT)
+# def remove_salon_stylist(
+#     stylist_id: str,
+#     hard: bool = Query(default=False, description="Hard delete (DB delete)"),
+#     db: Session = Depends(get_db),
+# ):
+#     # SalonStylistService(db).remove(stylist_id, hard=hard)
+#     return None

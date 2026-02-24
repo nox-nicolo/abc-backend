@@ -2,6 +2,7 @@ fastapi[standard]
 uvicorn[standard]
 passlib
 python-jose
+gunicorn
 
 PyJWT
 python-decouple

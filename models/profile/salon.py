@@ -80,31 +80,6 @@ class SalonGallery(Base):
 
 
 # -------------------------------------------------------------------
-# Followers
-# -------------------------------------------------------------------
-
-# class Followers(Base):
-#     __tablename__ = "followers"
-
-#     id = Column(String(36), primary_key=True)
-#     follower = Column(String(36), ForeignKey("users.id"), nullable=False)
-#     follow_this = Column(String(36), ForeignKey("users.id"), nullable=False)
-#     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
-
-#     # Relationships (EXPLICIT foreign_keys)
-#     follower_user = relationship("User", foreign_keys=[follower], back_populates="following")
-#     follow_this_user = relationship("User", foreign_keys=[follow_this], back_populates="follow")
-    
-#     __table_args__ = (
-#         UniqueConstraint("follower", "follow_this", name="uq_unique_follow"),
-#     )
-
-
-#                               END
-# ------------------------------------------------------------------- 
-
-
-# -------------------------------------------------------------------
 # Rated
 # -------------------------------------------------------------------
 class Rate(Base):
