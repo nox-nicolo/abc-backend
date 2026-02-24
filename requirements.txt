@@ -6,6 +6,7 @@ gunicorn
 sqlalchemy
 psycopg2-binary
 bcryptgit
+bcryptgit
 
 
 PyJWT
