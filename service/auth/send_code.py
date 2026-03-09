@@ -10,7 +10,7 @@ conf = ConnectionConfig(
     MAIL_USERNAME = "nicolooseph@gmail.com",  # Replace with your actual Gmail address
     MAIL_PASSWORD = "vnkd vrcx gflf yhdf" , # Replace with your Gmail password (consider app passwords for security)
     MAIL_SERVER = "smtp.gmail.com",
-    MAIL_PORT = 465, # Gmail SMTP port for STARTTLS 587, # SSL port is 465
+    MAIL_PORT = 587, # Gmail SMTP port for STARTTLS 587, # SSL port is 465
     MAIL_FROM = "nicolooseph@gmail.com",  # Sender email address
     MAIL_FROM_NAME = "African Beauty Community",  # Sender name
 
