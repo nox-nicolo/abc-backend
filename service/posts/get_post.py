@@ -147,7 +147,10 @@ async def get_profile_posts_(
 ) -> Dict[str, Any]:
 
     cursor_dt = _parse_cursor(cursor)
-
+    
+    profile_user_id = db.query(Salon).filter(Salon.id == profile_user_id).first().user_id
+    print(f"User id {profile_user_id}");
+    
     query = (
         db.query(Post)
         .outerjoin(PostSettings, PostSettings.post_id == Post.id)

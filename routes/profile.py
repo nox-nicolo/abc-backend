@@ -12,7 +12,7 @@ from pydantic_schemas.profile.config_service_salon import SalonServiceConfigDeta
 from pydantic_schemas.profile.followers_view_profile import get_salon_followers
 from pydantic_schemas.profile.salon import  SalonGalleryResponse, SalonProfileResponse
 from pydantic_schemas.profile.salon_config_service import SalonServiceConfigIn, SalonServiceConfigOut, SalonServiceSelectableList
-from pydantic_schemas.profile.salon_stylists import SalonStylistCreate, SalonStylistListOut, SalonStylistOut, SalonStylistUpdate
+from pydantic_schemas.profile.salon_stylists import SalonStylistCreate, SalonStylistListOut, SalonStylistOut, SalonStylistOutSimple, SalonStylistUpdate, UserSearchListOut
 from pydantic_schemas.profile.salon_view import SalonFollowersResponseSchema, SalonViewProfileResponseSchema
 from pydantic_schemas.profile.settings import AccountMediaResponse, SalonContactLocationResponse, SalonContactUpdateRequest, SalonProfileResponse, SalonProfileUpdateRequest, SalonWorkingHoursResponse, SalonWorkingHoursUpdateRequest
 from pydantic_schemas.profile.top_salon import TopSalonResponse
@@ -422,71 +422,100 @@ async def update_gallery(
 # -------------------------------------------------------------------
 @profile.post(
     "/stylist",
-    response_model=SalonStylistOut,
+    response_model=SalonStylistOutSimple,
     status_code=status.HTTP_201_CREATED,
 )
 def create_salon_stylist(
     payload: SalonStylistCreate,
     db: Session = Depends(get_db),
+    user_id: TokenData = Depends(get_current_user),
 ):
-    return SalonStylistService(db).create(payload)
+    return SalonStylistService(db, user_id=user_id.user_id).create(payload)
 
 
 # -------------------------------------------------------------------
 # LIST (optional filters + pagination)
 # -------------------------------------------------------------------
-# @profile.get("", response_model=SalonStylistListOut)
-# def list_salon_stylists(
-#     salon_id: Optional[str] = Query(default=None),
-#     user_id: Optional[str] = Query(default=None),
-#     is_active: Optional[bool] = Query(default=None),
-#     limit: int = Query(default=20, ge=1, le=100),
-#     offset: int = Query(default=0, ge=0),
-#     db: Session = Depends(get_db),
-# ):
-#     # return SalonStylistService(db).list(
-#     #     salon_id=salon_id,
-#     #     user_id=user_id,
-#     #     is_active=is_active,
-#     #     limit=limit,
-#     #     offset=offset,
-#     # )
-#     return None
-
+@profile.get("/stylists", response_model=SalonStylistListOut)
+def list_salon_stylists(
+    user_id: TokenData = Depends(get_current_user),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    return SalonStylistService(db, user_id=user_id.user_id).list_for_salon(
+        # user_id=user_id.user_id,
+        limit=limit,
+        offset=offset,
+    )
+    
+@profile.get("/stylists/search-users", response_model=UserSearchListOut)
+def search_potential_stylists(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(default=10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    user_data: TokenData = Depends(get_current_user),
+):
+    service = SalonStylistService(db, user_id=user_data.user_id)
+    results = service.search_users_to_add(query=q, limit=limit)
+    
+    return {
+        "items": results,
+        "query": q,
+        "count": len(results)
+    }
 
 # -------------------------------------------------------------------
 # GET ONE STYLIST (for edit form, or just to view details)
 # -------------------------------------------------------------------
-# @profile.get("/{stylist_id}", response_model=SalonStylistOut)
-# def get_salon_stylist(
-#     stylist_id: str,
-#     db: Session = Depends(get_db),
-# ):
-#     # return SalonStylistService(db).get(stylist_id)
-#     return None
+@profile.get("/stylist/{stylist_id}", response_model=SalonStylistOut)
+def get_one_salon_stylist(
+    stylist_id: str,
+    db: Session = Depends(get_db),
+    user_data: TokenData = Depends(get_current_user),
+):
+    """
+    Fetch details for a specific stylist.
+    Used to populate the 'Edit Stylist' screen.
+    """
+    service = SalonStylistService(db, user_id=user_data.user_id)
+    return service.get_stylist(stylist_id)
 
 
 # -------------------------------------------------------------------
 # UPDATE (PATCH) STYLIST - partial update, only fields sent will be updated
 # -------------------------------------------------------------------
-# @profile.patch("/{stylist_id}", response_model=SalonStylistOut)
-# def update_salon_stylist(
-#     stylist_id: str,
-#     payload: SalonStylistUpdate,
-#     db: Session = Depends(get_db),
-# ):
-#     # return SalonStylistService(db).update(stylist_id, payload)
-#     return None
+@profile.patch("/stylist/{stylist_id}", response_model=SalonStylistOut)
+def update_salon_stylist(
+    stylist_id: str,
+    payload: SalonStylistUpdate,
+    db: Session = Depends(get_db),
+    user_data: TokenData = Depends(get_current_user),
+):
+    """
+    Update stylist details (title, bio, active status).
+    Only the salon owner can perform this.
+    """
+    service = SalonStylistService(db, user_id=user_data.user_id)
+    return service.update_stylist(stylist_id, payload)
 
 
 # -------------------------------------------------------------------
 # REMOVE STYLIST (soft delete by default)
 # -------------------------------------------------------------------
-# @profile.delete("/{stylist_id}", status_code=status.HTTP_204_NO_CONTENT)
-# def remove_salon_stylist(
-#     stylist_id: str,
-#     hard: bool = Query(default=False, description="Hard delete (DB delete)"),
-#     db: Session = Depends(get_db),
-# ):
-#     # SalonStylistService(db).remove(stylist_id, hard=hard)
-#     return None
+@profile.delete(
+    "/stylist/{stylist_id}", 
+    status_code=status.HTTP_204_NO_CONTENT
+)
+def remove_salon_stylist(
+    stylist_id: str,
+    db: Session = Depends(get_db),
+    user_data: TokenData = Depends(get_current_user),
+):
+    """
+    Removes a stylist from the owner's salon.
+    'stylist_id' is the unique ID of the SalonStylist record.
+    """
+    service = SalonStylistService(db, user_id=user_data.user_id)
+    service.remove_stylist(stylist_id)
+    return None # 204 No Content doesn't return a body

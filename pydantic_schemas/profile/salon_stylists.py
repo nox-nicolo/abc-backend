@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional, List
+from typing import Any, Optional, List
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, computed_field
+
+from core.enumeration import ImageURL
+
+from core.enumeration import ImageURL
 
 
 # -----------------------------
@@ -29,7 +33,7 @@ class SalonStylistCreate(SalonStylistBase):
       - attach an existing user via user_id (recommended), OR
       - later extend this to invite/create a user account flow.
     """
-    salon_id: str
+    # salon_id: str
     user_id: str
 
 
@@ -50,17 +54,34 @@ class SalonStylistUpdate(BaseModel):
 # -----------------------------
 # Output models
 # -----------------------------
+# Create a small schema for the picture itself
+class ProfilePictureOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    file_name: str  # Ensure this matches your DB column name
+
 class StylistUserMini(BaseModel):
-    """
-    Minimal user payload to show in stylist responses.
-    Adjust fields to match your User model.
-    """
     model_config = ConfigDict(from_attributes=True)
 
     id: str
     username: Optional[str] = None
     name: Optional[str] = None
-    profile_picture: Optional[str] = None
+
+    # Replace Any with your new schema
+    profile_picture: Optional[ProfilePictureOut] = None
+
+    @computed_field
+    @property
+    def profile_picture_url(self) -> Optional[str]:
+        # Now 'self.profile_picture' is a Pydantic object, not a raw DB model
+        if not self.profile_picture or not self.profile_picture.file_name:
+            return None
+
+        return f"{ImageURL.PROFILE_URL.value}/{self.profile_picture.file_name}"
+    
+
+class SalonStylistOutSimple(BaseModel):
+    message: str = "Stylist created successfully"
 
 
 class SalonStylistOut(BaseModel):
@@ -90,3 +111,23 @@ class SalonStylistListOut(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class UserSearchListOut(BaseModel):
+    """
+    Returns a list of users matching the search criteria
+    to be added as stylists.
+    """
+    items: List[StylistUserMini]
+    query: str
+    count: int
+    
+    
+# -----------------------------
+# Update (PATCH)
+# -----------------------------
+class SalonStylistUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, max_length=100)
+    bio: Optional[str] = Field(default=None, max_length=500)
+    is_active: Optional[bool] = None
+    is_owner: Optional[bool] = None
