@@ -31,6 +31,7 @@ from service.search.scoring import (
 profile_url = ImageURL.PROFILE_URL.value
 major_url = ImageURL.SERVICE_URL.value + "major/"
 minor_url = ImageURL.SERVICE_URL.value + "minor/"
+salon_url = ImageURL.SALON_COVER_URL.value
 
 
 # ---------------------------
@@ -161,7 +162,11 @@ def search_salons(db: Session, q: str, limit: int, current_user_id: str) -> List
 
         is_verified = bool(salon.user.is_verified) if salon.user else False
         owner_name = salon.user.name if salon.user else None
-
+        
+        salon_cover_url = (salon_url + salon.display_ads) if salon.display_ads else (profile_url + salon.user.profile_picture.file_name) 
+        if salon.display_ads == 'Not Set':
+            salon_cover_url =  (profile_url + salon.user.profile_picture.file_name)
+    
         score = compute_salon_score(salon.title, salon.slogan, q_clean, is_verified)
 
         results.append(
@@ -170,7 +175,7 @@ def search_salons(db: Session, q: str, limit: int, current_user_id: str) -> List
                 entity="salon",
                 name=getattr(salon, "name", salon.title),  # if your schema requires `name`
                 title=salon.title,
-                cover_image=salon.display_ads,
+                cover_image=salon_cover_url,
                 is_verified=is_verified,
                 owner_name=owner_name,
                 slogan=salon.slogan,

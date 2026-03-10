@@ -5,9 +5,9 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_
 
-from core.enumeration import BookingStatus
+from core.enumeration import BookingStatus, ImageURL
 from models.booking.booking import Booking
-from models.profile.salon import Salon, SalonServicePrice
+from models.profile.salon import Salon, SalonLocation, SalonServicePrice
 from models.auth.user import User
 
 from models.services.service import SubServices
@@ -18,6 +18,9 @@ from pydantic_schemas.booking.booking import (
 
 from pydantic_schemas.booking.choose_salon import SalonOfferForBooking
 from service.booking.helper import _auto_no_show, _now
+
+
+salon_url = ImageURL.SALON_COVER_URL.value
 
 
 # ---------------------------------------------------------
@@ -410,13 +413,13 @@ async def get_salons_for_style(
 
             Salon.id.label("salon_id"),
             Salon.title.label("salon_name"),
-            Salon.address.label("salon_city"),
+            (SalonLocation.street + " " + SalonLocation.city + ", " + SalonLocation.country).label("salon_city"),
             Salon.display_ads.label("salon_image"),
 
             SubServices.id.label("sub_service_id"),
             SubServices.name.label("sub_service_name"),
 
-            # ✅ FIX HERE
+            # FIX HERE
             SalonServicePrice.price_max.label("price"),
             SalonServicePrice.currency,
             SalonServicePrice.duration_minutes,
@@ -436,7 +439,7 @@ async def get_salons_for_style(
             salon_id=row.salon_id,
             salon_name=row.salon_name,
             salon_city=row.salon_city,
-            salon_image=row.salon_image,
+            salon_image= salon_url + row.salon_image if row.salon_image else None,
 
             sub_service_id=row.sub_service_id,
             sub_service_name=row.sub_service_name,

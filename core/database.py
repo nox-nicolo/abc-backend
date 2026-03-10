@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker
 
 # Define database URI 
 DATABASE_URL = 'postgresql://neondb_owner:npg_r69uJkgvYBpW@ep-still-field-abm8djij-pooler.eu-west-2.aws.neon.tech/abc?sslmode=require&channel_binding=require'
-# DATABASE_URL = "postgresql://postgres:elocinhacker@localhost:5432/abc"
+DATABASE_URL = "postgresql://postgres:elocinhacker@localhost:5432/abc"
 
 
 # Create the SQLAlchemy engine
