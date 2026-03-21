@@ -34,6 +34,13 @@ class SalonServiceProductIn(BaseModel):
     product_name: str
     brand: Optional[str] = None
 
+class SalonServiceConfigStylistOut(BaseModel):
+    id: str
+    name: str
+    image: Optional[str] = None
+
+    class Config:
+        from_attributes = True
 
 class SalonServiceConfigIn(BaseModel):
     service_id: Optional[str] = None
@@ -67,7 +74,7 @@ class SalonServiceConfigOut(BaseModel):
     status: ServiceCreatedStatus
     created_at: datetime
 
-    stylist_ids: List[str]
+    stylists: List[SalonServiceConfigStylistOut]
 
     benefits: List[SalonServiceBenefitIn]
     products: List[SalonServiceProductIn]

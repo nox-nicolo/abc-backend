@@ -7,8 +7,10 @@ from core.database import get_db
 from pydantic_schemas.auth.jwt_token import TokenData
 from pydantic_schemas.services.event import EventCard
 from pydantic_schemas.services.service import MajorServiceResponse, MinorServiceResponse
+from pydantic_schemas.services.service_details import ServiceDetailsResponse
 from service.auth.JWT.oauth2 import get_current_user
 from service.services.event import get_featured_events
+from service.services.service_details import _get_service_details
 from service.services.services import _get_major, _get_minor, _minor_upload, all_services, major_upload
 
 service = APIRouter(
@@ -160,4 +162,18 @@ async def upload_minor(
         )
 
 
-
+@service.get("/{service_id}/details", response_model=ServiceDetailsResponse)
+async def get_service_details(
+    service_id: str,
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    """
+    Get full details of a service whether the ID belongs to a major
+    or minor service.
+    """
+    return await _get_service_details(
+        db=db,
+        user_id=current_user.user_id,
+        service_id=service_id,
+    )

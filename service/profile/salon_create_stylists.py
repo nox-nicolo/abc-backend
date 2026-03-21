@@ -32,25 +32,24 @@ class SalonStylistService:
         self.salon = salon  # Now we have access to self.salon.id everywhere
 
     # ---------------------------------------------------------------
-    # CREATE (for testing first)
+    # CREATE
     # ---------------------------------------------------------------
     def create(self, payload) -> SalonStylist:
         """
-        Creates a stylist row for a salon.
+        Creates a stylist row for the currently authenticated salon.
 
         Expected payload fields:
-          - salon_id: str
-          - user_id: str
-          - title: Optional[str]
-          - bio: Optional[str]
-          - is_owner: bool
-          - is_active: bool
+        - user_id: str
+        - title: Optional[str]
+        - bio: Optional[str]
+        - is_owner: bool
+        - is_active: bool
         """
 
-        # Ensure salon exists
+        # Ensure salon exists for the authenticated user
         salon = (
             self.db.query(Salon)
-            .filter(Salon.id == payload.salon_id)
+            .filter(Salon.user_id == self.user_id)
             .first()
         )
         if not salon:
@@ -58,7 +57,6 @@ class SalonStylistService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Salon not found",
             )
-            
 
         # Ensure user exists
         user = (
@@ -71,11 +69,10 @@ class SalonStylistService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found",
             )
-            
 
         # Create stylist row
         stylist = SalonStylist(
-            salon_id=self.salon.id,
+            salon_id=salon.id,
             user_id=payload.user_id,
             title=getattr(payload, "title", None),
             bio=getattr(payload, "bio", None),
@@ -85,7 +82,6 @@ class SalonStylistService:
 
         self.db.add(stylist)
 
-        # Commit + handle unique constraint (uq_salon_stylist)
         try:
             self.db.commit()
         except IntegrityError:
@@ -95,7 +91,6 @@ class SalonStylistService:
                 detail="This user is already a stylist for this salon",
             )
 
-        # Return with user relationship loaded (for SalonStylistOut.user)
         stylist = (
             self.db.query(SalonStylist)
             .options(joinedload(SalonStylist.user))

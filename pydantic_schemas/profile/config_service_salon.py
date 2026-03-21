@@ -18,6 +18,15 @@ class SalonServiceProductOut(BaseModel):
         from_attributes = True
 
 
+class SalonServiceConfigStylistOut(BaseModel):
+    id: str
+    name: str
+    image: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class SalonServiceConfigOut(BaseModel):
     salon_service_price_id: str
 
@@ -28,7 +37,8 @@ class SalonServiceConfigOut(BaseModel):
     duration_minutes: Optional[int]
     status: str  # active | inactive | archived
 
-    stylist_ids: List[str]
+    stylists: List[SalonServiceConfigStylistOut]
+    # stylists: str
 
     benefits: List[SalonServiceBenefitOut]
     products: List[SalonServiceProductOut]
@@ -57,9 +67,15 @@ class SalonServiceSelectableItem(BaseModel):
         from_attributes = True
 
 
-class SalonServiceSelectableResponse(BaseModel):
-    items: SalonServiceSelectableItem
+# class SalonServiceSelectableResponse(BaseModel):
+#     items: SalonServiceSelectableItem
 
 
 class SalonServiceConfigDetailResponse(BaseModel):
     item: SalonServiceSelectableItem
+    
+    
+from pydantic import BaseModel
+
+class MessageResponse(BaseModel):
+    message: str

@@ -29,12 +29,24 @@ from models.profile.salon import SalonFollower, Salon, SalonLocation, SalonServi
 from pydantic_schemas.posts.single_post import BookingState, EngagementState, OtherPostsSection, PostPreview, PriceRange, ReviewSection, ServiceProduct, ServiceSection, SimilarSection, SinglePostResponse, SponsoredSalonSection, StylistSection
 from service.trending.logic import apply_trending_logic
 
+from core.r2_config import BASE_URL 
+from core.enumeration import (
+    BookingStatus,
+    PostCollectionType,
+    PostStatus,
+    PostVisibility,
+    ImageDirectories,
+)
+
 
 # ------------------------------------------------------------------
 # URLs
 # ------------------------------------------------------------------
-IMAGE_URL = ImageURL.POSTS_URL.value
-PROFILE_URL = ImageURL.PROFILE_URL.value
+# IMAGE_URL = ImageURL.POSTS_URL.value
+# PROFILE_URL = ImageURL.PROFILE_URL.value
+
+POST_IMAGE_BASE = f"{BASE_URL}/{ImageDirectories.POST_DIR.value}"
+PROFILE_IMAGE_BASE = f"{BASE_URL}/{ImageDirectories.PROFILE_DIR.value}"
 
 
 # ------------------------------------------------------------------
@@ -50,6 +62,21 @@ def _parse_cursor(cursor: Optional[str]) -> Optional[datetime]:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid cursor format",
         )
+
+# --------------------------------------------------
+# URL builders
+# --------------------------------------------------
+def build_profile_url(file_name: Optional[str]) -> Optional[str]:
+    if not file_name:
+        return None
+    return f"{PROFILE_IMAGE_BASE}{file_name}"
+
+
+def build_post_media_url(file_name: Optional[str]) -> Optional[str]:
+    if not file_name:
+        return None
+    return f"{POST_IMAGE_BASE}{file_name}"
+
 
 
 # ==============================================================
@@ -260,8 +287,13 @@ def _build_posts_response(
                     "user_id": author.id,
                     "username": author.username,
                     "is_verified": author.is_verified,
+                    # "profile_picture": (
+                    #     f"{PROFILE_URL}{author.profile_picture.file_name}"
+                    #     if author.profile_picture
+                    #     else None
+                    # ),
                     "profile_picture": (
-                        f"{PROFILE_URL}{author.profile_picture.file_name}"
+                        build_profile_url(author.profile_picture.file_name)
                         if author.profile_picture
                         else None
                     ),
@@ -281,7 +313,8 @@ def _build_posts_response(
                 "caption": post.caption_text,
                 "media": [
                     {
-                        "url": f"{IMAGE_URL}{m.media_url}",
+                        # "url": f"{IMAGE_URL}{m.media_url}",
+                        "url": build_post_media_url(m.media_url),
                         "type": m.media_type.name,
                         "aspect_ratio": m.aspect_ratio,
                     }
@@ -398,8 +431,13 @@ async def get_post__(
             "user_id": author.id,
             "username": author.username,
             "is_verified": author.is_verified,
+            # "profile_picture": (
+            #     f"{PROFILE_URL}{author.profile_picture.file_name}"
+            #     if author.profile_picture
+            #     else None
+            # ),
             "profile_picture": (
-                f"{PROFILE_URL}{author.profile_picture.file_name}"
+                build_profile_url(author.profile_picture.file_name)
                 if author.profile_picture
                 else None
             ),
@@ -419,7 +457,8 @@ async def get_post__(
         "caption": post.caption_text,
         "media": [
             {
-                "url": f"{IMAGE_URL}{m.media_url}",
+                # "url": f"{IMAGE_URL}{m.media_url}",
+                "url": build_post_media_url(m.media_url),
                 "type": m.media_type.name,
                 "aspect_ratio": m.aspect_ratio,
             }
@@ -675,8 +714,13 @@ def _build_review_section(
             {
                 "id": r.id,
                 "user_name": r.user.username,
+                # "user_avatar": (
+                #     f"{PROFILE_URL}{r.user.profile_picture.file_name}"
+                #     if r.user.profile_picture
+                #     else None
+                # ),
                 "user_avatar": (
-                    f"{PROFILE_URL}{r.user.profile_picture.file_name}"
+                    build_profile_url(r.user.profile_picture.file_name)
                     if r.user.profile_picture
                     else None
                 ),
@@ -695,7 +739,8 @@ def _post_to_preview(post: Post) -> PostPreview:
     media = post.media_items[0] if post.media_items else None
     return PostPreview(
         id=post.id,
-        cover_image=f"{IMAGE_URL}{media.media_url}" if media else "",
+        # cover_image=f"{IMAGE_URL}{media.media_url}" if media else "",
+        cover_image=build_post_media_url(media.media_url) if media else "",
     )
     
     
@@ -891,8 +936,13 @@ def _build_stylists_section(
         StylistSection(
             id=owner.id,
             name=owner.username,
+            # avatar=(
+            #     f"{PROFILE_URL}{owner.profile_picture.file_name}"
+            #     if owner.profile_picture
+            #     else None
+            # ),
             avatar=(
-                f"{PROFILE_URL}{owner.profile_picture.file_name}"
+                build_profile_url(owner.profile_picture.file_name)
                 if owner.profile_picture
                 else None
             ),

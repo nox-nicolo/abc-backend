@@ -1,17 +1,17 @@
 
 
-from http.client import HTTPException
+
 from typing import List, Optional
-from fastapi import APIRouter, File, Form, Query, UploadFile, status, Depends
+from fastapi import HTTPException, APIRouter, File, Form, Query, UploadFile, status, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from core.database import get_db
 from pydantic_schemas.auth.jwt_token import TokenData
-from pydantic_schemas.profile.config_service_salon import SalonServiceConfigDetailResponse, SalonServiceSelectableResponse
+from pydantic_schemas.profile.config_service_salon import MessageResponse, SalonServiceConfigDetailResponse
 from pydantic_schemas.profile.followers_view_profile import get_salon_followers
 from pydantic_schemas.profile.salon import  SalonGalleryResponse, SalonProfileResponse
-from pydantic_schemas.profile.salon_config_service import SalonServiceConfigIn, SalonServiceConfigOut, SalonServiceSelectableList
+from pydantic_schemas.profile.salon_config_service import SalonServiceConfigIn, SalonServiceConfigOut
 from pydantic_schemas.profile.salon_stylists import SalonStylistCreate, SalonStylistListOut, SalonStylistOut, SalonStylistOutSimple, SalonStylistUpdate, UserSearchListOut
 from pydantic_schemas.profile.salon_view import SalonFollowersResponseSchema, SalonViewProfileResponseSchema
 from pydantic_schemas.profile.settings import AccountMediaResponse, SalonContactLocationResponse, SalonContactUpdateRequest, SalonProfileResponse, SalonProfileUpdateRequest, SalonWorkingHoursResponse, SalonWorkingHoursUpdateRequest
@@ -54,7 +54,7 @@ async def salon_profile(db: Session = Depends(get_db), current_user: TokenData =
 
 
 # -------------------------------------------------------------------
-# Salon Services and other configured by salon 
+# Get Service those configured and not
 # -------------------------------------------------------------------
 @profile.get(
     "/salon/services",
@@ -95,11 +95,11 @@ def list_services_for_selection(
 
 
 # -------------------------------------------------------------------
-# Salon Create Congigured Services
+# Configure Salon Services (Create)
 # -------------------------------------------------------------------
 @profile.post(
     "/salon/services",
-    # response_model=SalonServiceConfigOut,
+    response_model=MessageResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def create_salon_service_route(
@@ -133,7 +133,7 @@ def create_salon_service_route(
 # -------------------------------------------------------------------
 @profile.put(
     "/salon/services/{salon_service_price_id}",
-    response_model=SalonServiceConfigOut,
+    response_model=MessageResponse,
     status_code=status.HTTP_200_OK,
 )
 def update_salon_service_route(
@@ -168,7 +168,7 @@ def update_salon_service_route(
 # ----------------------------------------------------------------
 @profile.get(
     "/salon/services/{service_id}/sub/{sub_service_id}/configure",
-    # response_model=SalonServiceConfigDetailResponse,
+    response_model=SalonServiceConfigDetailResponse,
     status_code=status.HTTP_200_OK,
 )
 def get_salon_service_config(
@@ -448,7 +448,10 @@ def list_salon_stylists(
         limit=limit,
         offset=offset,
     )
-    
+ 
+# -------------------------------------------------------------------
+# SEARCH USERS TO ADD AS STYLISTS (by name or email, with pagination)
+# -------------------------------------------------------------------   
 @profile.get("/stylists/search-users", response_model=UserSearchListOut)
 def search_potential_stylists(
     q: str = Query(..., min_length=1),

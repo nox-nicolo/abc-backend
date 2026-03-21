@@ -5,6 +5,7 @@ from fastapi import HTTPException, status
 
 from models.profile.salon import Salon, SalonServiceBenefit, SalonServicePrice, SalonServiceProduct, SalonStylist, StylistService
 from models.services.service import Services, SubServices
+from pydantic_schemas.profile.config_service_salon import SalonServiceConfigDetailResponse
 from pydantic_schemas.profile.salon_config_service import SalonServiceConfigIn, SalonServiceConfigOut
 
 
@@ -17,32 +18,26 @@ def create_salon_service(
     db: Session,
     salon: str,
     payload: SalonServiceConfigIn,
-) -> SalonServiceConfigOut:
+) -> dict:
     """
     Create a salon service configuration (first-time setup).
+    Returns only a simple success response.
     """
-    # never do this it couples service logic to authit duplicates router responsibility it makes testing harder
     salon_id = salon
     salon = db.query(Salon).filter(Salon.user_id == salon_id).first()
-    
-    # Get the salon Id from the user
 
     if not salon:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Salon not found",
         )
-        
+
     # Validate service / sub-service
     if not payload.service_id and not payload.sub_service_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="service_id or sub_service_id is required",
         )
-
-    
-    service = None
-    sub_service = None
 
     if payload.service_id:
         service = (
@@ -99,7 +94,7 @@ def create_salon_service(
     )
 
     db.add(salon_service)
-    db.flush()  # get salon_service.id
+    db.flush()
 
     # Add benefits
     for benefit in payload.benefits:
@@ -122,19 +117,19 @@ def create_salon_service(
         )
 
     # Assign stylists
-    unique_ids = set(payload.stylist_ids)
-
     if payload.stylist_ids:
-        stylists = (
-        db.query(SalonStylist)
-        .filter(
-            SalonStylist.id.in_(unique_ids),
-            SalonStylist.salon_id == salon.id,
-        )
-        .all()
-    )
+        unique_ids = set(payload.stylist_ids)
 
-        if len(stylists) != len(payload.stylist_ids):
+        stylists = (
+            db.query(SalonStylist)
+            .filter(
+                SalonStylist.id.in_(unique_ids),
+                SalonStylist.salon_id == salon.id,
+            )
+            .all()
+        )
+
+        if len(stylists) != len(unique_ids):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="One or more stylists are invalid for this salon",
@@ -148,7 +143,6 @@ def create_salon_service(
                 )
             )
 
-    # Commit transaction
     try:
         db.commit()
     except IntegrityError:
@@ -158,24 +152,7 @@ def create_salon_service(
             detail="Failed to create salon service",
         )
 
-    db.refresh(salon_service)
-
-    # Return config (edit mode payload)
-    return SalonServiceConfigOut(
-        id=salon_service.id,
-        service_id=salon_service.service_id,
-        sub_service_id=salon_service.sub_service_id,
-        price_min=salon_service.price_min,
-        price_max=salon_service.price_max,
-        currency=salon_service.currency,
-        duration_minutes=salon_service.duration_minutes,
-        status=salon_service.status,
-        created_at=salon_service.created_at,
-        stylist_ids=payload.stylist_ids,
-        benefits=payload.benefits,
-        products=payload.products,
-    )
-    
+    return {"message": "Salon service created successfully"}
 # ------------------------------------------------------------------
 
 
@@ -188,7 +165,7 @@ def update_salon_service(
     salon: str,
     salon_service_price_id: str,
     payload: SalonServiceConfigIn,
-) -> SalonServiceConfigOut:
+) -> SalonServiceConfigDetailResponse:
     
     salon_id = salon
     salon = db.query(Salon).filter(Salon.user_id == salon_id).first()
@@ -272,19 +249,6 @@ def update_salon_service(
 
     db.refresh(salon_service)
 
-    return SalonServiceConfigOut(
-        id=salon_service.id,
-        service_id=salon_service.service_id,
-        sub_service_id=salon_service.sub_service_id,
-        price_min=salon_service.price_min,
-        price_max=salon_service.price_max,
-        currency=salon_service.currency,
-        duration_minutes=salon_service.duration_minutes,
-        status=salon_service.status,
-        created_at=salon_service.created_at,
-        stylist_ids=list(unique_ids) if payload.stylist_ids else [],
-        benefits=payload.benefits,
-        products=payload.products,
-    )
+    return {"message": "Salon service updated successfully"}
 
 # ----------------------------------------------------------------

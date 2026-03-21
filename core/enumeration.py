@@ -2,6 +2,9 @@ from enum import Enum as PyEnum
 
 ADDRESS = "http://192.168.43.160:8000"
 
+# R2 Address for cloud storage, this is used to construct the image URLs for the profile and service images
+# BASE_URL = "https://579664b4b8d25ad1f56fd28d4b85f706.eu.r2.cloudflarestorage.com/assets"
+
 # code status for account verifications 
 class Status(PyEnum):
     PENDING = "pending"
@@ -67,7 +70,19 @@ class ImageDirectories(PyEnum):
     POST_DIR = "assets/images/post/"
     SALON_COVER_DIR = "assets/images/salon_cover_photos/"
     SALON_GALLERY_DIR = "assets/images/salon_gallery/"
-   
+    
+# # Version for cloud services,
+# For cloud R2 storage, the URL is stored in the environment variable and accessed through the ImageURL enum
+
+class ImageDirectories(PyEnum):
+    PROFILE_DIR = "images/user_profile_picture/"
+    SERVICE_DIR = "images/service_list_styles/"
+    POST_DIR = "images/post/"
+    SALON_COVER_DIR = "images/salon_cover_photos/"
+    SALON_GALLERY_DIR = "images/salon_gallery/"
+
+ 
+# No version for cloud services  
 # This is used to store the image URL and directory for the profile and service images
 class ImageURL(PyEnum):
     PROFILE_URL = f"{ADDRESS}/{ImageDirectories.PROFILE_DIR.value}"

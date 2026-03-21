@@ -10,7 +10,7 @@ from typing import List, Optional
 
 from core.database import get_db
 from core.enumeration import ImageDirectories, MediaState, MediaType
-from models.auth.user import User
+from core.r2_config import upload_file
 from models.posts.posts import Hashtag, MediaData, PostHashtag, PostMention, PostSettings
 from pydantic_schemas.posts.create_post import MediaItemSchema, PostSettingsSchema
 from sqlalchemy import func
@@ -152,61 +152,120 @@ async def post_settings_inserted(post_id, settings: PostSettingsSchema, db: Sess
 # -------------------------------------------------------------------
 # Upload Post Media
 # -------------------------------------------------------------------
+# async def upload_media(
+#     post_id: str, 
+#     metadata: dict,           # <-- dict
+#     file: UploadFile,
+#     db: Session
+# ):
+#     """
+#     Handles saving a single media item's file to the filesystem 
+#     and its metadata to the database.
+#     """
+
+#     if not file:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST, 
+#             detail="Media file object is missing."
+#         )
+
+#     # Generate unique id for media
+#     media_data_id = str(uuid.uuid4())
+
+#     # Save file
+#     filename = file.filename
+#     extension = os.path.splitext(filename)[1].lower()
+#     allowed_extensions = [
+#         ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".svg", ".heic", ".ico", 
+#         ".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".mpeg", ".mpg", ".3gp", ".m4v"
+#     ]
+#     if extension not in allowed_extensions:
+#         raise HTTPException(
+#             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, 
+#             detail="Media format is not supported"
+#         )
+
+#     os.makedirs(ImageDir, exist_ok=True)
+#     unique_filename = f"{uuid.uuid4().hex}{extension}"
+#     file_location = os.path.join(ImageDir, unique_filename)
+
+#     try:
+#         with open(file_location, "wb") as buffer:
+#             shutil.copyfileobj(file.file, buffer)
+#     except Exception as e:
+#         print(f"File write failed: {e}")
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+#             detail="Failed to save media file to disk."
+#         )
+
+#     # Save metadata in database
+#     media_save = MediaData(
+#         id=media_data_id,
+#         media_type=MediaType(metadata["media_type"]),    # dict style
+#         media_url=unique_filename,
+#         post_id=post_id,
+#         media_state=MediaState(metadata["media_state"]),
+#         aspect_ratio=metadata.get("aspect_ratio")        # use get() in case it's None
+#     )
+
+#     db.add(media_save)
 async def upload_media(
-    post_id: str, 
-    metadata: dict,           # <-- dict
+    post_id: str,
+    metadata: dict,
     file: UploadFile,
     db: Session
 ):
     """
-    Handles saving a single media item's file to the filesystem 
-    and its metadata to the database.
+    Handles uploading a single media item to R2
+    and saving its metadata to the database.
     """
 
     if not file:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Media file object is missing."
         )
 
-    # Generate unique id for media
     media_data_id = str(uuid.uuid4())
 
-    # Save file
     filename = file.filename
     extension = os.path.splitext(filename)[1].lower()
+
     allowed_extensions = [
-        ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".svg", ".heic", ".ico", 
+        ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".svg", ".heic", ".ico",
         ".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".mpeg", ".mpg", ".3gp", ".m4v"
     ]
+
     if extension not in allowed_extensions:
         raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, 
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="Media format is not supported"
         )
 
-    os.makedirs(ImageDir, exist_ok=True)
     unique_filename = f"{uuid.uuid4().hex}{extension}"
-    file_location = os.path.join(ImageDir, unique_filename)
+    r2_path = f"{ImageDirectories.POST_DIR.value}{unique_filename}"
 
     try:
-        with open(file_location, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        upload_file(file.file, r2_path, content_type=file.content_type)
     except Exception as e:
-        print(f"File write failed: {e}")
+        print(f"R2 upload failed: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-            detail="Failed to save media file to disk."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to upload media file."
         )
 
-    # Save metadata in database
     media_save = MediaData(
         id=media_data_id,
-        media_type=MediaType(metadata["media_type"]),    # dict style
+        media_type=MediaType(metadata["media_type"]),
         media_url=unique_filename,
         post_id=post_id,
         media_state=MediaState(metadata["media_state"]),
-        aspect_ratio=metadata.get("aspect_ratio")        # use get() in case it's None
+        aspect_ratio=metadata.get("aspect_ratio")
     )
 
     db.add(media_save)
+    db.commit()
+    db.refresh(media_save)
+
+    return media_save

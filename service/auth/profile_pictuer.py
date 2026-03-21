@@ -7,10 +7,15 @@ from sqlalchemy.orm import Session
 from fastapi import Depends, HTTPException
 
 from core.database import get_db
+from core.enumeration import ImageDirectories
 from models.auth.profile_picture import ProfilePicture
 from models.auth.user import User
 
-DEFAULT_PROFILE_PICTURE = "user.png"
+# DEFAULT_PROFILE_PICTURE = "user.png"
+
+# Build the R2 path
+DEFAULT_PROFILE_PICTURE_PATH = "user.png"
+# Example: "images/user_profile_picture/user.png"
 
 
 def create_profile_picture(user: User, db: Session = Depends(get_db)):
@@ -35,7 +40,7 @@ def create_profile_picture(user: User, db: Session = Depends(get_db)):
     profile_picture = ProfilePicture(
         id = str(uuid.uuid4()),
         user_id = user.id,
-        file_name = DEFAULT_PROFILE_PICTURE,  # Default profile picture name
+        file_name = DEFAULT_PROFILE_PICTURE_PATH,  # DEFAULT_PROFILE_PICTURE,  # Default profile picture name
         is_custom = False,
         uploaded_at = datetime.now(),
         updated_at = datetime.now()
