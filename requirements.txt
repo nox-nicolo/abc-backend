@@ -8,6 +8,7 @@ psycopg2-binary
 bcrypt
 fastapi_mail
 boto3
+resend
 
 PyJWT
 python-decouple
