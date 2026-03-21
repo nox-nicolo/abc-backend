@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.middleware.cors import CORSMiddleware
 from routes import auth, booking, posts, profile, search, service, setup_profile, users
 from core.database import engine
 from models.base import Base
@@ -8,11 +9,22 @@ from models.base import Base
 app = FastAPI(docs_url=None)  # Disable default Swagger UI
 
 # Mount static files for assets (user images, etc.)
-app.mount("/assets", StaticFiles(directory="assets"), name="abc_files")
+# app.mount("/assets", StaticFiles(directory="assets"), name="abc_files")
 
 # Mount static files for Swagger UI (downloaded locally)
 app.mount("/swagger", StaticFiles(directory="swagger_static"), name="swagger_files")
 
+
+# ----------------------------
+# CORS Middleware
+# ----------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ----------------------------
 # Routers
