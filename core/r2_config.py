@@ -58,3 +58,27 @@ def delete_file(path: str):
 
 def build_file_url(path: str) -> str:
     return f"{BASE_URL}/{path}"
+
+
+def debug_r2():
+    data = {
+        "R2_ENDPOINT": R2_ENDPOINT,
+        "BUCKET_NAME": BUCKET_NAME,
+        "BASE_URL": BASE_URL,
+        "ACCESS_KEY_LEN": len(ACCESS_KEY) if ACCESS_KEY else None,
+    }
+
+    try:
+        s3.head_bucket(Bucket=BUCKET_NAME)
+        data["head_bucket"] = "OK"
+    except Exception as e:
+        data["head_bucket"] = str(e)
+
+    try:
+        res = s3.list_objects_v2(Bucket=BUCKET_NAME, MaxKeys=5)
+        data["list_objects"] = "OK"
+        data["sample_keys"] = [x["Key"] for x in res.get("Contents", [])]
+    except Exception as e:
+        data["list_objects"] = str(e)
+
+    return data
