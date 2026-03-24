@@ -121,15 +121,9 @@ def verify_user(code: str, db: Session = Depends(get_db)):
                 user_id=user.id,
                 title=f"{user.username}'s Salon" if user.username else "My Salon",
                 slogan="Your beauty, our duty",
-                description="Welcome to our salon! We offer top-notch beauty services to make you look and feel your best.",
-                address="Not Set",
-                coordinates="0.0000,0.0000",
-                phone_number="Not Set",
-                email=user.email if user.email else "Not Set",
-                working_hours="Not Set",
+                description="Welcome to our salon!",
                 display_ads="Not Set",
                 profile_completion=0.0,
-                created_at=datetime.now(),
             )
             db.add(salon)
 
