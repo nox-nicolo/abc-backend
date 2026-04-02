@@ -320,7 +320,7 @@ def _build_posts_response(
                     }
                     for m in post.media_items
                 ],
-                "service": post.sub_service.id,
+                "service": post.sub_service.id if post.sub_service else None,
                 "stats": { 
                     "likes": likes_map.get(post.id, 0), 
                     "comments": comments_map.get(post.id, 0), 
@@ -370,12 +370,12 @@ async def get_post__(
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
 
-    if post.status != PostStatus.PUBLISHED:
+    if post.status != PostStatus.PUBLISHED.name:
         if post.user_id != user_id:
             raise HTTPException(status_code=403, detail="Post not available")
 
     settings = post.settings
-    if settings.visibility != PostVisibility.PUBLIC:
+    if settings.visibility != PostVisibility.PUBLIC.name:
         if post.user_id != user_id:
             raise HTTPException(status_code=403, detail="Permission denied")
 
@@ -464,7 +464,7 @@ async def get_post__(
             }
             for m in post.media_items
         ],
-        "service": post.sub_service.id,
+        "service": post.sub_service.id if post.sub_service else None,
         "stats": { 
             "likes": likes or 0, 
             "comments": comments or 0, 
@@ -634,14 +634,14 @@ def _build_booking_state(
         .filter(
             Booking.customer_id == current_user.user_id,
             Booking.salon_service_price_id == service_price_id,
-            Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.COMPLETED]),
+            Booking.status.in_([BookingStatus.CONFIRMED.name, BookingStatus.COMPLETED.name]),
         )
         .all()
     )
 
     has_booked_before = bool(bookings)
 
-    completed_booking_ids = [b.id for b in bookings if b.status == BookingStatus.COMPLETED]
+    completed_booking_ids = [b.id for b in bookings if b.status == BookingStatus.COMPLETED.name]
 
     if not completed_booking_ids:
         return BookingState(can_book=True, has_booked_before=has_booked_before, can_review=False)
