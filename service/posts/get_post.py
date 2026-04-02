@@ -597,7 +597,7 @@ def _build_service_context(
             if service_price.service
             else ""
         ),
-        name=service_price.service_id.name,
+        name=service_price.service.name if service_price.service else "",
         price=PriceRange(
             min=service_price.price_min,
             max=service_price.price_max,
