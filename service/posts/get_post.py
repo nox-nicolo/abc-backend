@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 from fastapi import HTTPException, status
 
@@ -92,6 +92,17 @@ async def get_posts_(
 
     cursor_dt = _parse_cursor(cursor)
 
+    # subquery: user IDs of salons the viewer follows
+    followed_salon_user_ids = (
+        select(Salon.user_id)
+        .where(
+            Salon.id.in_(
+                select(SalonFollower.salon_id)
+                .where(SalonFollower.user_id == user_id)
+            )
+        )
+    )
+
     query = (
         db.query(Post)
         .outerjoin(PostSettings, PostSettings.post_id == Post.id)
@@ -105,28 +116,30 @@ async def get_posts_(
 
             joinedload(Post.media_items),
         )
-        .filter(
-            Post.status == PostStatus.PUBLISHED.name,
-            or_(
-                PostSettings.visibility == PostVisibility.PUBLIC.name,
-                PostSettings.id.is_(None),
-            ),
-        )
+        .filter(Post.status == PostStatus.PUBLISHED.name)
     )
 
     if option == PostCollectionType.feed:
-        followed_users = (
-            select(SalonFollower.following_user_id)
-            .where(SalonFollower.follower == user_id)
-        )
+        # own posts: any visibility
+        # followed salon posts: PUBLIC or FRIENDS
         query = query.filter(
             or_(
                 Post.user_id == user_id,
-                Post.user_id.in_(followed_users),
+                and_(
+                    Post.user_id.in_(followed_salon_user_ids),
+                    or_(
+                        PostSettings.visibility == PostVisibility.PUBLIC.name,
+                        PostSettings.visibility == PostVisibility.FRIENDS.name,
+                        PostSettings.id.is_(None),
+                    ),
+                ),
             )
         )
 
     elif option == PostCollectionType.trending:
+        query = query.filter(
+            or_(PostSettings.visibility == PostVisibility.PUBLIC.name, PostSettings.id.is_(None))
+        )
         query = apply_trending_logic(
             base_query=query,
             db=db,
@@ -142,7 +155,9 @@ async def get_posts_(
         query = query.filter(Post.id.in_(saved_posts))
 
     elif option == PostCollectionType.explore:
-        pass
+        query = query.filter(
+            or_(PostSettings.visibility == PostVisibility.PUBLIC.name, PostSettings.id.is_(None))
+        )
 
     else:
         raise HTTPException(
@@ -375,9 +390,23 @@ async def get_post__(
             raise HTTPException(status_code=403, detail="Post not available")
 
     settings = post.settings
-    if settings.visibility != PostVisibility.PUBLIC.name:
-        if post.user_id != user_id:
+    if settings and post.user_id != user_id:
+        visibility = settings.visibility
+        if visibility == PostVisibility.PRIVATE.name:
             raise HTTPException(status_code=403, detail="Permission denied")
+        elif visibility == PostVisibility.FRIENDS.name:
+            salon = db.query(Salon).filter(Salon.user_id == post.user_id).first()
+            is_follower = (
+                salon and
+                db.query(SalonFollower)
+                .filter(
+                    SalonFollower.salon_id == salon.id,
+                    SalonFollower.user_id == user_id,
+                )
+                .first() is not None
+            )
+            if not is_follower:
+                raise HTTPException(status_code=403, detail="Permission denied")
 
     likes = (
         db.query(func.count(PostLike.id))
