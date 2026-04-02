@@ -5,8 +5,10 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from pydantic_schemas.auth.jwt_token import TokenData
+from pydantic_schemas.customer.profile import CustomerProfileResponse, CustomerProfileUpdate
 from pydantic_schemas.users.user_select_service import UserSelectServicesResponse
 from service.auth.JWT.oauth2 import get_current_user
+from service.customer.profile import get_customer_profile_, update_customer_profile_
 from service.search.users import recommend_user, search_user
 from service.users.user_select_services import user_select_services_
 
@@ -21,37 +23,49 @@ users = APIRouter(
 
 
 # ---------------------------------------------------
-# Customer End Point
+# Customer Profile Endpoints
 # ---------------------------------------------------
 
-
-# ++++++++++++++++++++++@GET+++++++++++++++++++++++++
-
-# Header informations
-@users.get('/customers/header')
-async def get_customer_header():
-    return {
-        'Customer Informations'
-    }
-
-# Settings
-@users.get('/customers/settings')
-async def get_customer_header_settings():
-    return {
-        'Customer Settings'
-    }
-    
-# Menu
-@users.get('/customers/menu')
-async def get_customer_menu():
-    return {
-        'This are the helping Data'
-    }
+@users.get("/me/profile", response_model=CustomerProfileResponse)
+async def get_my_profile(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_customer_profile_(current_user.user_id, db)
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+    except Exception as e:
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": str(e)})
 
 
+@users.put("/me/profile", response_model=CustomerProfileResponse)
+async def update_my_profile(
+    data: CustomerProfileUpdate,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return update_customer_profile_(current_user.user_id, data, db)
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": str(e)})
 
-# ++++++++++++++++++++++@POST++++++++++++++++++++++++
 
+@users.get("/{user_id}/profile", response_model=CustomerProfileResponse)
+async def get_user_profile(
+    user_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_customer_profile_(user_id, db)
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+    except Exception as e:
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": str(e)})
 
 #                       END
 # ---------------------------------------------------

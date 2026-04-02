@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes import auth, booking, posts, profile, search, service, setup_profile, users
 from core.database import engine
 from models.base import Base
+import models.auth.customer_profile  # register CustomerProfile table
 
 app = FastAPI(docs_url=None)  # Disable default Swagger UI
 

@@ -1,9 +1,8 @@
-from datetime import timedelta
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from pydantic_schemas.auth.jwt_token import TokenData
-from service.auth.JWT.JWT_token import create_access_token, verify_refresh_token, verify_token
+from service.auth.JWT.JWT_token import create_access_token, create_refresh_token, verify_refresh_token, verify_token
 
 token_auth_scheme = HTTPBearer()
 
@@ -27,25 +26,26 @@ async def refresh_token(request: Request):
             detail = "Refresh token not found",
         )
         
-    refersh_token = refresh_token.split(" ")[1] # Remove Bearer from token
-    
+    token_str = refresh_token.split(" ")[1]  # Remove Bearer from token
+
     credentials_exception = HTTPException(
-        status_code = status.HTTP_401_UNAUTHORIZED,
-        detail = "Could not validate refresh token",
-        headers = {"WWW-Authenticate": "Bearer"}, 
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate refresh token",
+        headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
     # Verify the refresh token
-    token_data = verify_refresh_token(refresh_token, credentials_exception)
-    
-    # If the refresh token is valid, issue new access token
-    new_access_token = create_access_token(
-        data = {"sub": token_data.user_id},
-        expire_delta = timedelta(minutes = 60),  # Set the expiration time for the new access token    
-    )
-    
+    token_data = verify_refresh_token(token_str, credentials_exception)
+
+    # Issue new access token
+    new_access_token = create_access_token(data={"sub": token_data.user_id})
+
+    # Issue new refresh token (rotation — old one is replaced)
+    new_refresh_token = create_refresh_token(data={"sub": token_data.user_id})
+
     return {
-        "access_token": new_access_token, 
+        "access_token": new_access_token,
+        "refresh_token": new_refresh_token,
         "token_type": "bearer",
     }
     

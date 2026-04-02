@@ -10,8 +10,8 @@ from pydantic_schemas.auth.jwt_token import TokenData
 
 SECRET_KEY = "6d812761b157200f2e112e2438627e2cb6fc43791826b1f25c06056266cb18a4"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 10  # 60 minutes
-REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30 days
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
+REFRESH_TOKEN_EXPIRE_DAYS = 30  # 30 days
 
 
 
@@ -48,7 +48,7 @@ def verify_token(token: str, exception):
 def create_refresh_token(data: dict):
     to_encode = data.copy() 
     
-    expire = datetime.utcnow() + timedelta(days = REFRESH_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     
     to_encode.update({'exp': expire}) 
     

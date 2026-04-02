@@ -52,6 +52,7 @@ class User(Base):
     followed_salons = relationship("SalonFollower", back_populates="user", cascade="all, delete-orphan",)
     blocked_salons = relationship("SalonBlock", back_populates="user", cascade="all, delete-orphan",)
     salon_reports = relationship("SalonReport", back_populates="user", cascade="all, delete-orphan",)
+    customer_profile = relationship("CustomerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
     
     def __repr__(self):
