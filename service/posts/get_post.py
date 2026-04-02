@@ -116,7 +116,7 @@ async def get_posts_(
 
             joinedload(Post.media_items),
         )
-        .filter(Post.status == PostStatus.PUBLISHED.name)
+        .filter(Post.status == PostStatus.PUBLISHED)
     )
 
     if option == PostCollectionType.feed:
@@ -128,8 +128,8 @@ async def get_posts_(
                 and_(
                     Post.user_id.in_(followed_salon_user_ids),
                     or_(
-                        PostSettings.visibility == PostVisibility.PUBLIC.name,
-                        PostSettings.visibility == PostVisibility.FRIENDS.name,
+                        PostSettings.visibility == PostVisibility.PUBLIC,
+                        PostSettings.visibility == PostVisibility.FRIENDS,
                         PostSettings.id.is_(None),
                     ),
                 ),
@@ -138,7 +138,7 @@ async def get_posts_(
 
     elif option == PostCollectionType.trending:
         query = query.filter(
-            or_(PostSettings.visibility == PostVisibility.PUBLIC.name, PostSettings.id.is_(None))
+            or_(PostSettings.visibility == PostVisibility.PUBLIC, PostSettings.id.is_(None))
         )
         query = apply_trending_logic(
             base_query=query,
@@ -156,7 +156,7 @@ async def get_posts_(
 
     elif option == PostCollectionType.explore:
         query = query.filter(
-            or_(PostSettings.visibility == PostVisibility.PUBLIC.name, PostSettings.id.is_(None))
+            or_(PostSettings.visibility == PostVisibility.PUBLIC, PostSettings.id.is_(None))
         )
 
     else:
@@ -385,16 +385,15 @@ async def get_post__(
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
 
-    if post.status != PostStatus.PUBLISHED.name:
+    if post.status != PostStatus.PUBLISHED:
         if post.user_id != user_id:
             raise HTTPException(status_code=403, detail="Post not available")
 
     settings = post.settings
     if settings and post.user_id != user_id:
-        visibility = settings.visibility
-        if visibility == PostVisibility.PRIVATE.name:
+        if settings.visibility == PostVisibility.PRIVATE:
             raise HTTPException(status_code=403, detail="Permission denied")
-        elif visibility == PostVisibility.FRIENDS.name:
+        elif settings.visibility == PostVisibility.FRIENDS:
             salon = db.query(Salon).filter(Salon.user_id == post.user_id).first()
             is_follower = (
                 salon and
@@ -663,14 +662,14 @@ def _build_booking_state(
         .filter(
             Booking.customer_id == current_user.user_id,
             Booking.salon_service_price_id == service_price_id,
-            Booking.status.in_([BookingStatus.CONFIRMED.name, BookingStatus.COMPLETED.name]),
+            Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.COMPLETED]),
         )
         .all()
     )
 
     has_booked_before = bool(bookings)
 
-    completed_booking_ids = [b.id for b in bookings if b.status == BookingStatus.COMPLETED.name]
+    completed_booking_ids = [b.id for b in bookings if b.status == BookingStatus.COMPLETED]
 
     if not completed_booking_ids:
         return BookingState(can_book=True, has_booked_before=has_booked_before, can_review=False)
