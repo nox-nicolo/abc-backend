@@ -10,10 +10,13 @@ from models.booking.booking import Booking
 from models.profile.salon import Salon, SalonLocation, SalonServicePrice
 from models.auth.user import User
 
+from models.booking.booking import ServiceReview
 from models.services.service import SubServices
 from pydantic_schemas.booking.booking import (
     BookingCreate,
     BookingCancel,
+    BookingReschedule,
+    BookingReviewCreate,
 )
 
 from pydantic_schemas.booking.choose_salon import SalonOfferForBooking
@@ -66,9 +69,13 @@ async def create_booking_service(
             "Service price or duration not configured",
         )
 
-    end_at = payload.start_at + timedelta(
-        minutes=offering.duration_minutes
-    )
+    end_at = payload.start_at + timedelta(minutes=offering.duration_minutes)
+
+    if _has_overlap(db, offering.salon_id, payload.start_at, end_at):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This time slot is already taken, please choose another time",
+        )
 
     booking = Booking(
         customer_id=user_id,
@@ -395,6 +402,105 @@ async def complete_booking_service(
 
 
 
+
+
+def _has_overlap(db: Session, salon_id: str, start_at: datetime, end_at: datetime, exclude_booking_id: str = None) -> bool:
+    """Check if a time slot overlaps with an existing confirmed/pending booking at the salon."""
+    query = (
+        db.query(Booking)
+        .filter(
+            Booking.salon_id == salon_id,
+            Booking.status.in_([BookingStatus.PENDING, BookingStatus.CONFIRMED]),
+            Booking.start_at < end_at,
+            Booking.end_at > start_at,
+        )
+    )
+    if exclude_booking_id:
+        query = query.filter(Booking.id != exclude_booking_id)
+    return query.first() is not None
+
+
+# ---------------------------------------------------------
+# Reschedule booking (customer)
+# ---------------------------------------------------------
+
+async def reschedule_booking_service(
+    *,
+    db: Session,
+    booking_id: str,
+    user_id: str,
+    payload: BookingReschedule,
+) -> Booking:
+
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Booking not found")
+
+    if booking.customer_id != user_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your booking")
+
+    if booking.status not in (BookingStatus.PENDING, BookingStatus.CONFIRMED):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Booking cannot be rescheduled")
+
+    if booking.start_at <= _now():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Too late to reschedule this booking")
+
+    if payload.start_at <= _now():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "New start time must be in the future")
+
+    new_end_at = payload.start_at + timedelta(minutes=booking.duration_minutes_snapshot)
+
+    if _has_overlap(db, booking.salon_id, payload.start_at, new_end_at, exclude_booking_id=booking_id):
+        raise HTTPException(status.HTTP_409_CONFLICT, "This time slot is already taken")
+
+    booking.start_at = payload.start_at
+    booking.end_at = new_end_at
+    booking.status = BookingStatus.PENDING  # reset to pending so salon re-confirms
+
+    db.commit()
+    db.refresh(booking)
+    return booking
+
+
+# ---------------------------------------------------------
+# Leave a review (customer)
+# ---------------------------------------------------------
+
+async def create_review_service(
+    *,
+    db: Session,
+    booking_id: str,
+    user_id: str,
+    payload: BookingReviewCreate,
+) -> ServiceReview:
+
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Booking not found")
+
+    if booking.customer_id != user_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your booking")
+
+    if booking.status != BookingStatus.COMPLETED:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You can only review a completed booking")
+
+    existing = db.query(ServiceReview).filter(ServiceReview.booking_id == booking_id).first()
+    if existing:
+        raise HTTPException(status.HTTP_409_CONFLICT, "You already reviewed this booking")
+
+    review = ServiceReview(
+        booking_id=booking_id,
+        user_id=user_id,
+        salon_id=booking.salon_id,
+        salon_service_price_id=booking.salon_service_price_id,
+        rating=payload.rating,
+        comment=payload.comment,
+    )
+
+    db.add(review)
+    db.commit()
+    db.refresh(review)
+    return review
 
 
 async def get_salons_for_style(

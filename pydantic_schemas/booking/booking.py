@@ -72,6 +72,33 @@ class BookingCancel(BaseModel):
 
 
 # -------------------------------------------------
+# Reschedule booking
+# -------------------------------------------------
+
+class BookingReschedule(BaseModel):
+    start_at: datetime = Field(..., description="New requested start time (UTC)")
+
+
+# -------------------------------------------------
+# Review booking
+# -------------------------------------------------
+
+class BookingReviewCreate(BaseModel):
+    rating: int = Field(..., ge=1, le=5)
+    comment: Optional[str] = Field(None, max_length=1000)
+
+
+class BookingReviewResponse(BaseModel):
+    id: str
+    booking_id: str
+    rating: int
+    comment: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# -------------------------------------------------
 # Booking list item (minor change)
 # -------------------------------------------------
 

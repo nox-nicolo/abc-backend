@@ -12,11 +12,14 @@ from pydantic_schemas.booking.booking import (
     BookingResponse,
     BookingCancel,
     BookingListItem,
+    BookingReschedule,
+    BookingReviewCreate,
+    BookingReviewResponse,
 )
 
 from pydantic_schemas.booking.choose_salon import SalonOfferListResponse
 from service.auth.JWT.oauth2 import get_current_user
-from service.booking.booking import cancel_booking_service, complete_booking_service, confirm_booking_service, create_booking_service, get_booking_service, get_salon_bookings_service, get_salons_for_style, get_user_bookings_service, reject_booking_service
+from service.booking.booking import cancel_booking_service, complete_booking_service, confirm_booking_service, create_booking_service, create_review_service, get_booking_service, get_salon_bookings_service, get_salons_for_style, get_user_bookings_service, reject_booking_service, reschedule_booking_service
 
 
 booking = APIRouter(
@@ -301,6 +304,60 @@ async def complete_booking(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"detail": f"An unexpected error occurred: {e}"}
         )
+
+
+# -------------------------------------------------------------------
+# Reschedule booking (customer)
+# -------------------------------------------------------------------
+@booking.post(
+    "/{booking_id}/reschedule",
+    response_model=BookingResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def reschedule_booking(
+    booking_id: str,
+    payload: BookingReschedule,
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    try:
+        return await reschedule_booking_service(
+            db=db,
+            booking_id=booking_id,
+            user_id=current_user.user_id,
+            payload=payload,
+        )
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+    except Exception as e:
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": f"An unexpected error occurred: {e}"})
+
+
+# -------------------------------------------------------------------
+# Leave a review (customer)
+# -------------------------------------------------------------------
+@booking.post(
+    "/{booking_id}/review",
+    response_model=BookingReviewResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def leave_review(
+    booking_id: str,
+    payload: BookingReviewCreate,
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    try:
+        return await create_review_service(
+            db=db,
+            booking_id=booking_id,
+            user_id=current_user.user_id,
+            payload=payload,
+        )
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+    except Exception as e:
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": f"An unexpected error occurred: {e}"})
 
 
 # -------------------------------------------------------------------
