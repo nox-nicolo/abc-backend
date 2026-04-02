@@ -604,7 +604,7 @@ def _build_service_context(
             currency=service_price.currency or "TZS",
         ),
         duration_minutes=service_price.duration_minutes,
-        benefits=[b.title for b in benefits],
+        benefits=[b.benefit for b in benefits],
         products=[
             ServiceProduct(
                 name=p.product_name,
