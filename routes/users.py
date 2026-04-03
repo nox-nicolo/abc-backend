@@ -5,9 +5,11 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from pydantic_schemas.auth.jwt_token import TokenData
+from pydantic_schemas.customer.following import MyFollowingResponse
 from pydantic_schemas.customer.profile import CustomerProfileResponse, CustomerProfileUpdate
 from pydantic_schemas.users.user_select_service import UserSelectServicesResponse
 from service.auth.JWT.oauth2 import get_current_user
+from service.customer.following import get_my_following
 from service.customer.profile import get_customer_profile_, update_customer_profile_
 from service.search.users import recommend_user, search_user
 from service.users.user_select_services import user_select_services_
@@ -51,6 +53,19 @@ async def update_my_profile(
         return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
     except Exception as e:
         db.rollback()
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": str(e)})
+
+
+@users.get("/me/following", response_model=MyFollowingResponse)
+async def get_my_following_list(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_my_following(current_user.user_id, db)
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+    except Exception as e:
         return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": str(e)})
 
 
