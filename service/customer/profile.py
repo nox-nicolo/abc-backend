@@ -63,7 +63,7 @@ def get_customer_profile_(user_id: str, db: Session) -> CustomerProfileResponse:
         .filter(UserSelectServices.user_id == user_id)
         .first()
     )
-    preferred_services = user_services.service_ids if user_services and user_services.service_ids else []
+    preferred_services = user_services.services if user_services and user_services.services else []
 
     return CustomerProfileResponse(
         id=user.id,
