@@ -19,7 +19,10 @@ from service.posts.get_post import (
     get_profile_posts_,
     get_single_post_view_,
 )
+from service.posts.delete_post import delete_post_
 from service.posts.like_post import toggle_like
+from service.posts.pin_post import toggle_pin_
+from service.posts.repost import repost_
 
 posts = APIRouter(prefix="/posts", tags=["Posts"])
 
@@ -179,7 +182,7 @@ def search_hashtags(
 # ---------------------------------------------------
 # Like / Unlike (Toggle)
 # ---------------------------------------------------
-@posts.post("/{post_id}/like", )
+@posts.post("/{post_id}/like")
 async def like_post(
     post_id: str,
     current_user: TokenData = Depends(get_current_user),
@@ -190,3 +193,39 @@ async def like_post(
         user_id=current_user.user_id,
         db=db,
     )
+
+
+# ---------------------------------------------------
+# Delete post
+# ---------------------------------------------------
+@posts.delete("/{post_id}", status_code=200)
+def delete_post(
+    post_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return delete_post_(post_id=post_id, user_id=current_user.user_id, db=db)
+
+
+# ---------------------------------------------------
+# Repost / Undo repost (toggle)
+# ---------------------------------------------------
+@posts.post("/{post_id}/repost", status_code=200)
+def repost_post(
+    post_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return repost_(post_id=post_id, user_id=current_user.user_id, db=db)
+
+
+# ---------------------------------------------------
+# Pin / Unpin (toggle)
+# ---------------------------------------------------
+@posts.post("/{post_id}/pin", status_code=200)
+def pin_post(
+    post_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return toggle_pin_(post_id=post_id, user_id=current_user.user_id, db=db)

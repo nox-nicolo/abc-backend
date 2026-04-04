@@ -1,11 +1,12 @@
 
-from fastapi import Depends, HTTPException, APIRouter, Request, status 
+from fastapi import Depends, HTTPException, APIRouter, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel
 from sqlalchemy import or_
 
 from core.database import get_db
-from pydantic_schemas.auth.jwt_token import TokenData
+from models.auth.refresh_token import RefreshToken
 from pydantic_schemas.auth.jwt_token import TokenData
 from pydantic_schemas.auth.me import MeResponseSchema
 from pydantic_schemas.auth.user_create import UserCreate
@@ -15,6 +16,10 @@ from pydantic_schemas.auth.user_verification import UserVerification
 from service.auth import create_user, login_user, verify_user
 from service.auth.JWT.oauth2 import get_current_user, refresh_token
 from service.auth.me import me_
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str
 
 auth = APIRouter(
     prefix='/auth',
@@ -89,17 +94,29 @@ async def send_code(verifcation: UserVerification, db: Session = Depends(get_db)
 
 
 @auth.post('/refersh')
-async def refresh_token_(request: Request):
+async def refresh_token_(request: Request, db: Session = Depends(get_db)):
     try:
-        result = await refresh_token(request) 
-        if result: 
+        result = await refresh_token(request, db)
+        if result:
             return result
         else:
-            return result 
+            return result
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
-    except Exception as e:  
-        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": f"An unexpected error occured: {e}"}) 
+    except Exception as e:
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": f"An unexpected error occured: {e}"})
+
+
+@auth.post('/logout', status_code=status.HTTP_200_OK)
+def logout(body: LogoutRequest, db: Session = Depends(get_db)):
+    db_token = db.query(RefreshToken).filter(
+        RefreshToken.token == body.refresh_token,
+        RefreshToken.revoked == False,
+    ).first()
+    if db_token:
+        db_token.revoked = True
+        db.commit()
+    return {"detail": "Logged out"} 
     
     
     

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 from core.database import get_db
 from core.enumeration import AccountAccessStatus, Status,    ImageURL
 from core.hash_pass import Hash
+from models.auth.refresh_token import RefreshToken
 from models.auth.user import User
 from pydantic_schemas.auth.user_login import UserLogin
 from service.auth.JWT.JWT_token import ACCESS_TOKEN_EXPIRE_MINUTES, create_access_token, create_refresh_token
@@ -88,9 +89,13 @@ def login_user(user: UserLogin, db: Session = Depends(get_db)):
         data = {"sub": str(existing_user.id)}
     )
 
+    db_token = RefreshToken(user_id=str(existing_user.id), token=refresh_token)
+    db.add(db_token)
+    db.commit()
+
     return {
-        "user_id": existing_user.id, 
-        "access_token": access_token, 
+        "user_id": existing_user.id,
+        "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer"
     }

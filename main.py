@@ -6,6 +6,7 @@ from routes import auth, booking, posts, profile, search, service, setup_profile
 from core.database import engine
 from models.base import Base
 import models.auth.customer_profile  # register CustomerProfile table
+import models.auth.refresh_token     # register RefreshToken table
 
 app = FastAPI(docs_url=None)  # Disable default Swagger UI
 

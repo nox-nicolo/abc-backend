@@ -9,6 +9,7 @@ from pydantic_schemas.auth.jwt_token import TokenData
 from pydantic_schemas.search.hashtag import HashtagGridOut
 from pydantic_schemas.search.search import SaveSearchHistoryRequest, SaveSearchHistoryResponse, SearchResponse
 from service.auth.JWT.oauth2 import get_current_user
+from service.search.discover import get_nearby_salons, get_top_salons, get_trending_styles
 from service.search.search import search_
 from service.search.hashtag import get_hashtag_grid_
 
@@ -56,6 +57,38 @@ async def global_search(
         user_id=current_user.user_id,
     )
     
+
+# ── Discovery endpoints (idle search screen) ────────────────────────────────
+
+@search.get("/nearby", summary="Salons near a given coordinate")
+def nearby_salons(
+    lat: float = Query(..., description="Latitude of the customer"),
+    lng: float = Query(..., description="Longitude of the customer"),
+    radius_km: float = Query(15.0, ge=1, le=100),
+    limit: int = Query(10, ge=1, le=30),
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    return get_nearby_salons(db=db, lat=lat, lng=lng, radius_km=radius_km, limit=limit)
+
+
+@search.get("/top-salons", summary="Top salons by number of bookings")
+def top_salons(
+    limit: int = Query(10, ge=1, le=30),
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    return get_top_salons(db=db, current_user_id=current_user.user_id, limit=limit)
+
+
+@search.get("/trending", summary="Trending hashtag styles in the last 30 days")
+def trending_styles(
+    limit: int = Query(10, ge=1, le=30),
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    return get_trending_styles(db=db, limit=limit)
+
 
 # Search Result
 @search.get(
