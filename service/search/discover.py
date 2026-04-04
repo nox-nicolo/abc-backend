@@ -9,20 +9,23 @@ from sqlalchemy.orm import Session, joinedload
 
 from core.enumeration import ImageDirectories
 from core.r2_config import BASE_URL
+from models.auth.profile_picture import ProfilePicture
 from models.auth.user import User
 from models.booking.booking import Booking
-from models.posts.posts import Hashtag, PostHashtag
+from models.posts.posts import Post
 from models.profile.salon import Salon, SalonLocation
+from models.services.service import SubServices
 
 _profile_url = f"{BASE_URL}/{ImageDirectories.PROFILE_DIR.value}"
 _salon_url = f"{BASE_URL}/{ImageDirectories.SALON_COVER_DIR.value}"
+_minor_url = f"{BASE_URL}/{ImageDirectories.SERVICE_DIR.value}minor/"
 
 
-def _cover(salon: Salon) -> str | None:
-    if salon.display_ads and salon.display_ads != "Not Set":
-        return _salon_url + salon.display_ads
-    if salon.user and salon.user.profile_picture:
-        return _profile_url + salon.user.profile_picture.file_name
+def _cover_from_row(display_ads, profile_file_name) -> str | None:
+    if display_ads and display_ads != "Not Set":
+        return _salon_url + display_ads
+    if profile_file_name:
+        return _profile_url + profile_file_name
     return None
 
 
@@ -43,15 +46,21 @@ def get_nearby_salons(
     radius_km: float = 15.0,
     limit: int = 10,
 ) -> List[dict]:
-    # Bounding-box pre-filter (1 degree ≈ 111 km)
     delta = radius_km / 111.0
-    candidates = (
-        db.query(Salon)
-        .join(SalonLocation, SalonLocation.salon_id == Salon.id)
-        .options(
-            joinedload(Salon.user).joinedload(User.profile_picture),
-            joinedload(Salon.location),
+
+    rows = (
+        db.query(
+            Salon.id,
+            Salon.title,
+            Salon.display_ads,
+            SalonLocation.city,
+            SalonLocation.latitude,
+            SalonLocation.longitude,
+            ProfilePicture.file_name.label("profile_file"),
         )
+        .join(SalonLocation, SalonLocation.salon_id == Salon.id)
+        .join(User, User.id == Salon.user_id)
+        .outerjoin(ProfilePicture, ProfilePicture.user_id == User.id)
         .filter(
             SalonLocation.latitude.isnot(None),
             SalonLocation.longitude.isnot(None),
@@ -62,18 +71,19 @@ def get_nearby_salons(
     )
 
     results = []
-    for salon in candidates:
-        loc = salon.location
-        if not loc or loc.latitude is None or loc.longitude is None:
+    for row in rows:
+        if row.latitude is None or row.longitude is None:
             continue
-        dist = _haversine_km(lat, lng, loc.latitude, loc.longitude)
+        dist = _haversine_km(lat, lng, row.latitude, row.longitude)
         if dist <= radius_km:
             results.append({
-                "id": salon.id,
-                "title": salon.title or "",
-                "cover_image": _cover(salon),
-                "city": loc.city,
+                "id": row.id,
+                "title": row.title or "",
+                "cover_image": _cover_from_row(row.display_ads, row.profile_file),
+                "city": row.city,
                 "distance_km": round(dist, 1),
+                "lat": row.latitude,
+                "lng": row.longitude,
             })
 
     results.sort(key=lambda x: x["distance_km"])
@@ -87,15 +97,28 @@ def get_top_salons(
     current_user_id: str,
     limit: int = 10,
 ) -> List[dict]:
+    # Use a flat column query — avoids joinedload conflict with group_by aggregates
     rows = (
-        db.query(Salon, func.count(Booking.id).label("booking_count"))
-        .outerjoin(Booking, Booking.salon_id == Salon.id)
-        .options(
-            joinedload(Salon.user).joinedload(User.profile_picture),
-            joinedload(Salon.location),
+        db.query(
+            Salon.id,
+            Salon.title,
+            Salon.display_ads,
+            SalonLocation.city,
+            ProfilePicture.file_name.label("profile_file"),
+            func.count(Booking.id).label("booking_count"),
         )
+        .outerjoin(Booking, Booking.salon_id == Salon.id)
+        .join(User, User.id == Salon.user_id)
+        .outerjoin(ProfilePicture, ProfilePicture.user_id == User.id)
+        .outerjoin(SalonLocation, SalonLocation.salon_id == Salon.id)
         .filter(Salon.user_id != current_user_id)
-        .group_by(Salon.id)
+        .group_by(
+            Salon.id,
+            Salon.title,
+            Salon.display_ads,
+            SalonLocation.city,
+            ProfilePicture.file_name,
+        )
         .order_by(func.count(Booking.id).desc())
         .limit(limit)
         .all()
@@ -103,27 +126,43 @@ def get_top_salons(
 
     return [
         {
-            "id": salon.id,
-            "title": salon.title or "",
-            "cover_image": _cover(salon),
-            "city": salon.location.city if salon.location else None,
-            "booking_count": booking_count,
+            "id": row.id,
+            "title": row.title or "",
+            "cover_image": _cover_from_row(row.display_ads, row.profile_file),
+            "city": row.city,
+            "booking_count": row.booking_count,
         }
-        for salon, booking_count in rows
+        for row in rows
     ]
 
 
-# ── Trending styles (hashtags in last 30 days) ────────────────────────────────
+# ── Trending styles (sub-services by recent post count) ───────────────────────
 
 def get_trending_styles(db: Session, limit: int = 10) -> List[dict]:
+    """Returns the most-posted sub-services in the last 30 days with their images."""
     since = datetime.now(timezone.utc) - timedelta(days=30)
+
     rows = (
-        db.query(Hashtag, func.count(PostHashtag.id).label("post_count"))
-        .join(PostHashtag, PostHashtag.hashtag_id == Hashtag.id)
-        .filter(PostHashtag.created_at >= since)
-        .group_by(Hashtag.id)
-        .order_by(func.count(PostHashtag.id).desc())
+        db.query(
+            SubServices.id,
+            SubServices.name,
+            SubServices.file_name,
+            func.count(Post.id).label("post_count"),
+        )
+        .join(Post, Post.sub_service_id == SubServices.id)
+        .filter(Post.created_at >= since)
+        .group_by(SubServices.id, SubServices.name, SubServices.file_name)
+        .order_by(func.count(Post.id).desc())
         .limit(limit)
         .all()
     )
-    return [{"id": h.id, "tag": h.name, "post_count": count} for h, count in rows]
+
+    return [
+        {
+            "id": row.id,
+            "name": row.name,
+            "image": (_minor_url + row.file_name) if row.file_name else None,
+            "post_count": row.post_count,
+        }
+        for row in rows
+    ]

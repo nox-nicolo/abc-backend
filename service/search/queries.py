@@ -683,7 +683,7 @@ def search_services(db: Session, q: str, limit: int, current_user_id: str) -> Li
 
                 results.append(
                     SearchServiceResult(
-                        id=row.id,
+                        id=row.sub_service.id,   # SubServices.id, not SalonServicePrice.id
                         entity="service",
                         service_name=row.sub_service.name,
                         category="minor",
@@ -708,7 +708,7 @@ def search_services(db: Session, q: str, limit: int, current_user_id: str) -> Li
 
                 results.append(
                     SearchServiceResult(
-                        id=row.id,
+                        id=row.service.id,       # Services.id, not SalonServicePrice.id
                         entity="service",
                         service_name=row.service.name,
                         category="major",

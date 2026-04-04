@@ -190,8 +190,10 @@ async def get_profile_posts_(
 
     cursor_dt = _parse_cursor(cursor)
     
-    profile_user_id = db.query(Salon).filter(Salon.id == profile_user_id).first().user_id
-    print(f"User id {profile_user_id}");
+    salon = db.query(Salon).filter(Salon.id == profile_user_id).first()
+    if not salon:
+        raise HTTPException(status_code=404, detail="Salon not found")
+    profile_user_id = salon.user_id
     
     query = (
         db.query(Post)
@@ -1040,6 +1042,34 @@ def _build_sponsored_salons_section(
 
     return results
 
+
+
+# ==============================================================
+# OTHER POSTS (SEPARATE CURSOR ENDPOINT)
+# ==============================================================
+async def get_other_posts_(
+    viewer_user_id: str,
+    post_id: str,
+    db: Session,
+    cursor: Optional[datetime] = None,
+    limit: int = 10,
+):
+    """
+    Paginated continuation feed for a single post view.
+    Called after the initial load to load more posts below.
+    """
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    return _build_other_posts_section(
+        db=db,
+        viewer_user_id=viewer_user_id,
+        post=post,
+        exclude_post_ids={post_id},
+        cursor=cursor,
+        limit=limit,
+    )
 
 
 # ==============================================================

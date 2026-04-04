@@ -20,7 +20,8 @@ async def create_post_(
     user_id: str,
     post: CreatePostPayload,
     files: Optional[List[UploadFile]] = File(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    media_metadata: Optional[list] = None,
 ):
     """
     Create a post with associated metadata such as hashtags, mentions, settings, and media uploads.
@@ -109,13 +110,15 @@ async def create_post_(
     # Media Upload
     # ---------------------------------------------------------
     if files:
-        for file in files:
+        for i, file in enumerate(files):
+            ar = 1.0
+            if media_metadata and i < len(media_metadata):
+                ar = float(media_metadata[i].get("aspect_ratio", 1.0))
 
-            # Build metadata
             metadata = {
                 "media_type": "image",
                 "media_state": "uploaded",
-                "aspect_ratio": 1.0,
+                "aspect_ratio": ar,
             }
 
             await upload_media(

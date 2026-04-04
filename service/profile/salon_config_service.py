@@ -90,6 +90,7 @@ def create_salon_service(
         price_max=payload.price_max,
         currency=payload.currency,
         duration_minutes=payload.duration_minutes,
+        concurrent_capacity=payload.concurrent_capacity,
         status=payload.status,
     )
 
@@ -186,6 +187,7 @@ def update_salon_service(
     salon_service.price_max = payload.price_max
     salon_service.currency = payload.currency
     salon_service.duration_minutes = payload.duration_minutes
+    salon_service.concurrent_capacity = payload.concurrent_capacity
     salon_service.status = payload.status
 
     db.query(SalonServiceBenefit).filter(

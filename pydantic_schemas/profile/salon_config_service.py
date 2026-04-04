@@ -51,6 +51,7 @@ class SalonServiceConfigIn(BaseModel):
     currency: str = "TZS"
 
     duration_minutes: Optional[int] = None
+    concurrent_capacity: int = Field(default=1, ge=1)
 
     status: ServiceCreatedStatus
 
@@ -70,6 +71,7 @@ class SalonServiceConfigOut(BaseModel):
     currency: str
 
     duration_minutes: Optional[int]
+    concurrent_capacity: int = 1
 
     status: ServiceCreatedStatus
     created_at: datetime

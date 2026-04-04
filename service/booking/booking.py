@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_
+from sqlalchemy import and_, func
 
 from core.enumeration import BookingStatus, ImageURL
 from models.booking.booking import Booking
@@ -71,10 +71,11 @@ async def create_booking_service(
 
     end_at = payload.start_at + timedelta(minutes=offering.duration_minutes)
 
-    if _has_overlap(db, offering.salon_id, payload.start_at, end_at):
+    capacity = offering.concurrent_capacity or 1
+    if _has_overlap(db, offering.id, payload.start_at, end_at, capacity):
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            "This time slot is already taken, please choose another time",
+            "This time slot is fully booked, please choose another time",
         )
 
     booking = Booking(
@@ -404,20 +405,24 @@ async def complete_booking_service(
 
 
 
-def _has_overlap(db: Session, salon_id: str, start_at: datetime, end_at: datetime, exclude_booking_id: str = None) -> bool:
-    """Check if a time slot overlaps with an existing confirmed/pending booking at the salon."""
-    query = (
-        db.query(Booking)
-        .filter(
-            Booking.salon_id == salon_id,
-            Booking.status.in_([BookingStatus.PENDING, BookingStatus.CONFIRMED]),
-            Booking.start_at < end_at,
-            Booking.end_at > start_at,
-        )
+def _has_overlap(
+    db: Session,
+    salon_service_price_id: str,
+    start_at: datetime,
+    end_at: datetime,
+    capacity: int = 1,
+    exclude_booking_id: str = None,
+) -> bool:
+    """Return True when the number of overlapping bookings for this service slot meets or exceeds capacity."""
+    count_q = db.query(func.count(Booking.id)).filter(
+        Booking.salon_service_price_id == salon_service_price_id,
+        Booking.status.in_([BookingStatus.PENDING, BookingStatus.CONFIRMED]),
+        Booking.start_at < end_at,
+        Booking.end_at > start_at,
     )
     if exclude_booking_id:
-        query = query.filter(Booking.id != exclude_booking_id)
-    return query.first() is not None
+        count_q = count_q.filter(Booking.id != exclude_booking_id)
+    return count_q.scalar() >= capacity
 
 
 # ---------------------------------------------------------
@@ -450,8 +455,10 @@ async def reschedule_booking_service(
 
     new_end_at = payload.start_at + timedelta(minutes=booking.duration_minutes_snapshot)
 
-    if _has_overlap(db, booking.salon_id, payload.start_at, new_end_at, exclude_booking_id=booking_id):
-        raise HTTPException(status.HTTP_409_CONFLICT, "This time slot is already taken")
+    offering = db.query(SalonServicePrice).filter(SalonServicePrice.id == booking.salon_service_price_id).first()
+    capacity = (offering.concurrent_capacity or 1) if offering else 1
+    if _has_overlap(db, booking.salon_service_price_id, payload.start_at, new_end_at, capacity, exclude_booking_id=booking_id):
+        raise HTTPException(status.HTTP_409_CONFLICT, "This time slot is fully booked")
 
     booking.start_at = payload.start_at
     booking.end_at = new_end_at

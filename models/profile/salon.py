@@ -120,6 +120,7 @@ class SalonServicePrice(Base):
 
     currency = Column(String(10), default="TZS")
     duration_minutes = Column(INTEGER, nullable=True)
+    concurrent_capacity = Column(INTEGER, default=1, nullable=False)
     
     status = Column( Enum(ServiceCreatedStatus), default=ServiceCreatedStatus.INACTIVE, nullable=False, index=True,) # inactive, archived, active
 

@@ -16,6 +16,7 @@ from service.auth.JWT.oauth2 import get_current_user
 from service.posts.create_post import create_post_
 from service.posts.get_post import (
     get_posts_,
+    get_other_posts_,
     get_profile_posts_,
     get_single_post_view_,
 )
@@ -23,6 +24,8 @@ from service.posts.delete_post import delete_post_
 from service.posts.like_post import toggle_like
 from service.posts.pin_post import toggle_pin_
 from service.posts.repost import repost_
+from service.posts.save_post import toggle_bookmark
+from service.posts.update_post import update_post_
 
 posts = APIRouter(prefix="/posts", tags=["Posts"])
 
@@ -59,6 +62,7 @@ async def create_post(
         post=payload,
         files=media,
         db=db,
+        media_metadata=form.media_metadata,
     )
 
 
@@ -229,3 +233,53 @@ def pin_post(
     db: Session = Depends(get_db),
 ):
     return toggle_pin_(post_id=post_id, user_id=current_user.user_id, db=db)
+
+
+# ---------------------------------------------------
+# Other posts (cursor pagination for infinite scroll)
+# ---------------------------------------------------
+@posts.get("/{post_id}/other-posts", status_code=200)
+async def get_other_posts(
+    post_id: str,
+    cursor: Optional[datetime] = Query(None),
+    limit: int = Query(10, le=30),
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return await get_other_posts_(
+        viewer_user_id=current_user.user_id,
+        post_id=post_id,
+        db=db,
+        cursor=cursor,
+        limit=limit,
+    )
+
+
+# ---------------------------------------------------
+# Bookmark / Unbookmark (toggle save)
+# ---------------------------------------------------
+@posts.post("/{post_id}/bookmark", status_code=200)
+def bookmark_post(
+    post_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return toggle_bookmark(post_id=post_id, user_id=current_user.user_id, db=db)
+
+
+# ---------------------------------------------------
+# Update post caption
+# ---------------------------------------------------
+@posts.patch("/{post_id}", status_code=200)
+def update_post(
+    post_id: str,
+    caption: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return update_post_(
+        post_id=post_id,
+        user_id=current_user.user_id,
+        caption=caption,
+        db=db,
+    )
