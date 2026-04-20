@@ -486,8 +486,11 @@ def search_users(db: Session, q: str, limit: int, current_user_id: str) -> List[
     if not q_clean:
         return []
 
+    # Salons are the backbone of the app — customer accounts should never
+    # surface in the user bucket. Join to Salon so non-salon users drop out.
     users = (
         db.query(User)
+        .join(Salon, Salon.user_id == User.id)
         .options(joinedload(User.profile_picture))
         .filter(
             or_(

@@ -1,17 +1,31 @@
-from fastapi import APIRouter, status, HTTPException
+import time
+from collections import deque
+from threading import Lock
+
+from fastapi import APIRouter, Request, status, HTTPException
 from fastapi.params import Depends
 from fastapi.responses import JSONResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from core.database import get_db
+from models.auth.user import User
 from pydantic_schemas.auth.jwt_token import TokenData
 from pydantic_schemas.customer.following import MyFollowingResponse
 from pydantic_schemas.customer.profile import CustomerProfileResponse, CustomerProfileUpdate
+from pydantic_schemas.profile.notification_preferences import (
+    NotificationPreferenceResponse,
+    NotificationPreferenceUpdate,
+)
 from pydantic_schemas.users.user_select_service import UserSelectServicesResponse
 from service.auth.JWT.oauth2 import get_current_user
 from service.customer.following import get_my_following
 from service.customer.profile import get_customer_profile_, update_customer_profile_
 from service.search.users import recommend_user, search_user
+from service.users.notification_preferences import (
+    get_preferences as get_notification_preferences_,
+    update_preferences as update_notification_preferences_,
+)
 from service.users.user_select_services import user_select_services_
 
 
@@ -67,6 +81,51 @@ async def get_my_following_list(
         return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
     except Exception as e:
         return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": str(e)})
+
+
+# ---------------------------------------------------
+# Notification Preferences (booking reminders)
+# ---------------------------------------------------
+
+@users.get(
+    "/me/notification-preferences",
+    response_model=NotificationPreferenceResponse,
+)
+async def get_my_notification_preferences(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_notification_preferences_(db, current_user.user_id)
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": str(e)},
+        )
+
+
+@users.patch(
+    "/me/notification-preferences",
+    response_model=NotificationPreferenceResponse,
+)
+async def update_my_notification_preferences(
+    payload: NotificationPreferenceUpdate,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return update_notification_preferences_(db, current_user.user_id, payload)
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": str(e)},
+        )
 
 
 @users.get("/{user_id}/profile", response_model=CustomerProfileResponse)
@@ -237,21 +296,68 @@ async def get_recommended_user_tags(current_user: TokenData = Depends(get_curren
     
 @users.get("/user_select_services", response_model=UserSelectServicesResponse)
 async def get_user_select_services(
-    current_user: TokenData = Depends(get_current_user), 
+    current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     try:
         # Simply call the service
         return await user_select_services_(current_user.user_id, db)
-        
+
     except HTTPException as e:
         raise e # FastAPI handles HTTPExceptions automatically if you raise them
     except Exception as e:
         db.rollback()
         raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail=f"An unexpected error occurred: {str(e)}"
         )
+
+
+# Simple in-memory rate limit for the public username-check endpoint.
+# 30 requests per minute per IP is plenty for a real signup flow and makes
+# bulk enumeration impractical. For multi-worker deploys, swap to Redis.
+_CHECK_USERNAME_WINDOW = 60.0
+_CHECK_USERNAME_MAX = 30
+_check_username_hits: dict[str, deque] = {}
+_check_username_lock = Lock()
+
+
+def _enforce_check_username_rate(request: Request) -> None:
+    ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    cutoff = now - _CHECK_USERNAME_WINDOW
+    with _check_username_lock:
+        hits = _check_username_hits.setdefault(ip, deque())
+        while hits and hits[0] < cutoff:
+            hits.popleft()
+        if len(hits) >= _CHECK_USERNAME_MAX:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many username checks. Try again in a minute.",
+            )
+        hits.append(now)
+
+
+@users.get("/check-username")
+def check_username(
+    username: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    _enforce_check_username_rate(request)
+
+    username = username.strip().lower()
+    if len(username) < 3:
+        return {"available": False, "reason": "too_short"}
+    if not username.replace("_", "").isalnum():
+        return {"available": False, "reason": "invalid_chars"}
+    exists = (
+        db.query(User)
+        .filter(func.lower(User.username) == username)
+        .first()
+    )
+    return {"available": exists is None, "username": username}
+
 
 # ++++++++++++++++++++++@POST++++++++++++++++++++++++
 

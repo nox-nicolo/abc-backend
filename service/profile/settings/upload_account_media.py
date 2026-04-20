@@ -137,6 +137,7 @@
 
 
 import datetime
+import io
 import os
 import uuid
 from fastapi import UploadFile, HTTPException, status
@@ -155,11 +156,37 @@ COVER_PIC = ImageDirectories.SALON_COVER_DIR.value
 PROFILE_PIC_URL = f"{BASE_URL}/{PROFILE_PIC}"
 COVER_PIC_URL = f"{BASE_URL}/{COVER_PIC}"
 
-ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".svg", ".tiff"}
+# SVG is intentionally excluded — it can carry scripts/XXE payloads.
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".tiff"}
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
+
+
+def _sniff_image_format(head: bytes) -> str | None:
+    """Return a normalized image format based on magic bytes, or None."""
+    if head.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if head.startswith(b"GIF87a") or head.startswith(b"GIF89a"):
+        return "gif"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "webp"
+    if head[:4] in (b"II*\x00", b"MM\x00*"):
+        return "tiff"
+    return None
+
+
+_EXT_TO_FORMAT = {
+    ".jpg": "jpeg",
+    ".jpeg": "jpeg",
+    ".png": "png",
+    ".webp": "webp",
+    ".tiff": "tiff",
+}
 
 
 def validate_image(file: UploadFile):
-    ext = os.path.splitext(file.filename)[1].lower()
+    ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -168,12 +195,41 @@ def validate_image(file: UploadFile):
     return ext
 
 
+def _read_and_check(file: UploadFile, ext: str) -> bytes:
+    """Read the upload into memory, enforcing size + magic-byte checks."""
+    # Starlette exposes `size` when the client sent Content-Length; trust it
+    # only as a fast-fail short-circuit.
+    if file.size is not None and file.size > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Image exceeds 5 MB limit",
+        )
+
+    file.file.seek(0)
+    data = file.file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Image exceeds 5 MB limit",
+        )
+
+    detected = _sniff_image_format(data[:16])
+    expected = _EXT_TO_FORMAT.get(ext)
+    if detected is None or (expected and detected != expected):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="File content does not match a supported image format",
+        )
+    return data
+
+
 def save_image(file: UploadFile, folder: str) -> str:
     ext = validate_image(file)
+    data = _read_and_check(file, ext)
     filename = f"{uuid.uuid4().hex}{ext}"
     path = f"{folder}{filename}"
 
-    upload_file(file.file, path, content_type=file.content_type)
+    upload_file(io.BytesIO(data), path, content_type=file.content_type)
     return filename
 
 

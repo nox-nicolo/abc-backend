@@ -7,6 +7,7 @@ from core.enumeration import ImageURL
 from models.posts.posts import Post, PostLike
 from models.auth.user import User
 from models.auth.profile_picture import ProfilePicture  # adjust import
+from service.notification.notification import create_notification
 
 
 PROFILE_PICTURE_BASE_URL = ImageURL.PROFILE_URL.value
@@ -91,8 +92,13 @@ async def toggle_like(
     # 5. Notification (LIKE only, not self)
     # --------------------------------------------------
     if send_notification:
-        pass
-        # await create_notification(...)
+        create_notification(
+            db=db,
+            recipient_id=post.user_id,
+            actor_id=user_id,
+            type="like",
+            post_id=post_id,
+        )
 
     # --------------------------------------------------
     # 6. Response

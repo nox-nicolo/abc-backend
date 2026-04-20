@@ -1,96 +1,220 @@
-
-from operator import and_
 import uuid
-from sqlalchemy.orm import Session
-from fastapi import Depends, HTTPException, status
-from core.database import get_db
+from datetime import datetime
+from typing import Optional
+
+from fastapi import HTTPException, status
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload
+
+from core.enumeration import ImageDirectories
+from core.r2_config import BASE_URL
+from models.auth.user import User
 from models.posts.posts import Post, PostComment
-from pydantic_schemas.posts.get_post import PostCommentRequestSchema, PostRepyCommentRequestSchema
+from pydantic_schemas.posts.comment import (
+    CommentAuthor,
+    CommentCreateRequest,
+    CommentItem,
+    CommentListResponse,
+)
+from service.notification.notification import create_notification
 
-async def post_comment_(comment: PostCommentRequestSchema,  db: Session = Depends(get_db)):
-    # check if the post exists 
-    the_post = db.query(Post).filter(Post.id == comment.post_id).first() 
-    
-    if not the_post:
+
+PROFILE_IMAGE_BASE = f"{BASE_URL}/{ImageDirectories.PROFILE_DIR.value}"
+
+
+def _avatar_url(user: User) -> Optional[str]:
+    if user.profile_picture and user.profile_picture.file_name:
+        return f"{PROFILE_IMAGE_BASE}{user.profile_picture.file_name}"
+    return None
+
+
+def _to_item(
+    comment: PostComment,
+    viewer_user_id: str,
+    reply_counts: dict[str, int],
+) -> CommentItem:
+    user = comment.user
+    return CommentItem(
+        id=comment.id,
+        post_id=comment.post_id,
+        content=comment.content,
+        author=CommentAuthor(
+            id=user.id,
+            username=user.username,
+            profile_picture=_avatar_url(user),
+        ),
+        parent_comment_id=comment.comment_id,
+        reply_count=reply_counts.get(comment.id, 0),
+        created_at=comment.created_at,
+        is_mine=comment.user_com == viewer_user_id,
+    )
+
+
+# ------------------------------------------------------------------
+# CREATE
+# ------------------------------------------------------------------
+def create_comment(
+    *,
+    post_id: str,
+    user_id: str,
+    payload: CommentCreateRequest,
+    db: Session,
+) -> CommentItem:
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
         raise HTTPException(status_code=404, detail="Post not found")
-    
-    # add the comment to the table 
-    post_comment = PostComment(
-        id = str(uuid.uuid4()),
-        post_id = comment.post_id,
-        user_com = comment.user_com,
-        content = comment.comment
-    )
-    
-    db.add(post_comment)
-    
-    db.commit()
-    
-    db.refresh(post_comment)
-    
-    # return the post_comment) 
-    return post_comment
 
-
-
-
-async def comment_comment_(comment: PostRepyCommentRequestSchema, db: Session = Depends(get_db)):
-    
-    
-    comment_id = comment.comment_id
-    user_comment = comment.user
-    user_reply = comment.reply_user
-    comment_content = comment.comment
-    
-    print("user_reply: ", user_reply)
-    print("user_comment: ", user_comment)
-    print("comment_id: ", comment_id)
-    print("comment_context: ", comment_content)
-    
-    # check if the user comment the post
-    
-    the_comment = db.query(PostComment).filter(
-        and_(
-            PostComment.id == comment_id, 
-            PostComment.user_com == user_comment
+    parent: Optional[PostComment] = None
+    if payload.parent_comment_id:
+        parent = (
+            db.query(PostComment)
+            .filter(
+                PostComment.id == payload.parent_comment_id,
+                PostComment.post_id == post_id,
+            )
+            .first()
         )
-    ).first() 
-    
-    # if the comment not found then you can't comment on it
-    if not the_comment:
-        raise HTTPException(status_code = status.HTTP_404_NOT_FOUND, detail = "Comment not found")
-    
-    # so update the PostComment table for the comment on the comment 
-    # and also we can get the post id of the post that been commented on 
-    
-    post_id = the_comment.post_id 
-    
-    save_comment = PostComment(
-        id = str(uuid.uuid4()), 
-        post_id = post_id, 
-        user_com = user_comment, 
-        user_rep = user_reply,
-        comment_id = comment_id, 
-        content = comment_content
+        if not parent:
+            raise HTTPException(status_code=404, detail="Parent comment not found")
+
+    comment = PostComment(
+        id=str(uuid.uuid4()),
+        post_id=post_id,
+        user_com=user_id,
+        user_rep=payload.parent_comment_id and payload.parent_comment_id or None,
+        comment_id=payload.parent_comment_id,
+        content=payload.content.strip(),
     )
-    
-    if not save_comment: 
-        raise HTTPException(status_code = status.HTTP_500_INTERNAL_SERVER_ERROR, detail = "Internal Server Error")
-    
-    # then add to the database 
-    
-    db.add(save_comment)
+
+    db.add(comment)
     db.commit()
-    db.refresh(save_comment)
-    
-    return save_comment
+    db.refresh(comment)
+
+    # notifications: reply → parent comment author; top-level → post owner
+    if parent:
+        create_notification(
+            db=db,
+            recipient_id=parent.user_com,
+            actor_id=user_id,
+            type="reply",
+            post_id=post_id,
+            comment_id=comment.id,
+        )
+    else:
+        create_notification(
+            db=db,
+            recipient_id=post.user_id,
+            actor_id=user_id,
+            type="comment",
+            post_id=post_id,
+            comment_id=comment.id,
+        )
+
+    # re-fetch with user for author payload
+    comment = (
+        db.query(PostComment)
+        .options(joinedload(PostComment.user).joinedload(User.profile_picture))
+        .filter(PostComment.id == comment.id)
+        .first()
+    )
+
+    return _to_item(comment, viewer_user_id=user_id, reply_counts={})
 
 
+# ------------------------------------------------------------------
+# LIST (cursor-paginated, top-level or replies)
+# ------------------------------------------------------------------
+def list_comments(
+    *,
+    post_id: str,
+    viewer_user_id: str,
+    db: Session,
+    parent_comment_id: Optional[str] = None,
+    cursor: Optional[str] = None,
+    limit: int = 20,
+) -> CommentListResponse:
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
 
-async def update_comment_():
-    pass 
+    cursor_dt: Optional[datetime] = None
+    if cursor:
+        try:
+            cursor_dt = datetime.fromisoformat(cursor)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid cursor")
+
+    query = (
+        db.query(PostComment)
+        .options(joinedload(PostComment.user).joinedload(User.profile_picture))
+        .filter(PostComment.post_id == post_id)
+    )
+
+    if parent_comment_id is None:
+        query = query.filter(PostComment.comment_id.is_(None))
+    else:
+        query = query.filter(PostComment.comment_id == parent_comment_id)
+
+    if cursor_dt:
+        query = query.filter(PostComment.created_at < cursor_dt)
+
+    comments = (
+        query.order_by(PostComment.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    reply_counts: dict[str, int] = {}
+    if comments and parent_comment_id is None:
+        ids = [c.id for c in comments]
+        rows = (
+            db.query(PostComment.comment_id, func.count(PostComment.id))
+            .filter(PostComment.comment_id.in_(ids))
+            .group_by(PostComment.comment_id)
+            .all()
+        )
+        reply_counts = {cid: n for cid, n in rows}
+
+    return CommentListResponse(
+        items=[
+            _to_item(c, viewer_user_id=viewer_user_id, reply_counts=reply_counts)
+            for c in comments
+        ],
+        next_cursor=comments[-1].created_at.isoformat() if comments else None,
+    )
 
 
-async def update_comment():
-    pass 
+# ------------------------------------------------------------------
+# DELETE (author only; post owner can remove as moderation)
+# ------------------------------------------------------------------
+def delete_comment(
+    *,
+    post_id: str,
+    comment_id: str,
+    user_id: str,
+    db: Session,
+) -> dict:
+    comment = (
+        db.query(PostComment)
+        .filter(
+            PostComment.id == comment_id,
+            PostComment.post_id == post_id,
+        )
+        .first()
+    )
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
 
+    post = db.query(Post).filter(Post.id == post_id).first()
+    is_post_owner = post and post.user_id == user_id
+
+    if comment.user_com != user_id and not is_post_owner:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not allowed to delete this comment",
+        )
+
+    db.delete(comment)
+    db.commit()
+
+    return {"comment_id": comment_id, "deleted": True}

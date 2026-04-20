@@ -84,8 +84,18 @@ async def create_user(user: UserCreate, db: Session = Depends(get_db)):
     
     # set a default profile picture for the new user
     create_profile_picture(new_user, db)
-    
+
+    # Auto-create a salon record for salon owners
+    if user.role == "service":
+        salon = Salon(
+            id=str(uuid.uuid4()),
+            user_id=new_user.id,
+            title=user.name,
+        )
+        db.add(salon)
+        db.commit()
+
     # Create verification record After user creation
     await create_verification(new_user, "email", db)
-    
+
     return {"message": "Account Created"}

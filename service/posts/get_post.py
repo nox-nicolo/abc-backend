@@ -25,7 +25,7 @@ from models.posts.posts import (
 )
 
 from models.auth.user import User
-from models.profile.salon import SalonFollower, Salon, SalonLocation, SalonServiceBenefit, SalonServicePrice, SalonServiceProduct, SponsoredSalon, StylistService
+from models.profile.salon import SalonFollower, Salon, SalonLocation, SalonServiceBenefit, SalonServicePrice, SalonServiceProduct, SponsoredSalon
 from pydantic_schemas.posts.single_post import BookingState, EngagementState, OtherPostsSection, PostPreview, PriceRange, ReviewSection, ServiceProduct, ServiceSection, SimilarSection, SinglePostResponse, SponsoredSalonSection, StylistSection
 from service.trending.logic import apply_trending_logic
 
@@ -765,98 +765,103 @@ def _build_review_section(
 
 
 # Similar Result
-def _post_to_preview(post: Post) -> PostPreview:
+def _post_to_preview(post: Post, salon: Optional[Salon] = None) -> PostPreview:
     media = post.media_items[0] if post.media_items else None
     return PostPreview(
         id=post.id,
-        # cover_image=f"{IMAGE_URL}{media.media_url}" if media else "",
         cover_image=build_post_media_url(media.media_url) if media else "",
+        salon_name=salon.title if salon else None,
+        salon_id=salon.id if salon else None,
     )
-    
-    
+
+
 def _build_similar_section(
     db: Session,
+    viewer_user_id: str,
     post: Post,
-    limit: int = 6,
+    limit: int = 8,
 ) -> SimilarSection:
+    """
+    Posts from salons the viewer FOLLOWS that offer the same sub-service.
+    Deduplicated so each salon contributes at most one post (most recent).
+    Excludes the current post's salon.
+    """
 
-    base_filters = [
-        Post.status == PostStatus.PUBLISHED.name,
-        Post.id != post.id,
-    ]
+    if not post.sub_service_id:
+        return SimilarSection(items=[])
 
-    # ------------------------------------------------
-    # 1) By Service (same sub-service)
-    # ------------------------------------------------
-    by_service_posts = (
-        db.query(Post)
+    current_salon = db.query(Salon).filter(Salon.user_id == post.user_id).first()
+
+    followed_salon_ids = (
+        select(SalonFollower.salon_id)
+        .where(SalonFollower.user_id == viewer_user_id)
+    )
+
+    # Salon user_ids the viewer follows (post author ids)
+    followed_salon_user_ids = (
+        select(Salon.user_id)
+        .where(Salon.id.in_(followed_salon_ids))
+    )
+
+    candidates = (
+        db.query(Post, Salon)
+        .join(Salon, Salon.user_id == Post.user_id)
         .options(joinedload(Post.media_items))
         .filter(
-            *base_filters,
+            Post.status == PostStatus.PUBLISHED.name,
+            Post.id != post.id,
             Post.sub_service_id == post.sub_service_id,
+            Post.user_id.in_(followed_salon_user_ids),
+            Salon.id != (current_salon.id if current_salon else ""),
         )
-        .limit(limit)
+        .order_by(Post.created_at.desc())
+        .limit(limit * 4)
         .all()
     )
 
-    # ------------------------------------------------
-    # 2) By Stylist (REAL performer, not post owner)
-    # ------------------------------------------------
-    stylist_ids = (
-        db.query(StylistService.stylist_id)
-        .join(SalonServicePrice,
-              StylistService.salon_service_price_id == SalonServicePrice.id)
-        .filter(
-            SalonServicePrice.sub_service_id == post.sub_service_id,
-        )
-        .subquery()
+    seen_salons: set[str] = set()
+    items: List[PostPreview] = []
+    for p, salon in candidates:
+        if salon.id in seen_salons:
+            continue
+        seen_salons.add(salon.id)
+        items.append(_post_to_preview(p, salon=salon))
+        if len(items) >= limit:
+            break
+
+    return SimilarSection(items=items)
+
+
+
+
+# Other Posts
+def _resolve_viewer_location(
+    db: Session,
+    viewer_user_id: str,
+    viewer_city: Optional[str],
+    viewer_country: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    """Prefer explicit query params; fall back to CustomerProfile."""
+    from models.auth.customer_profile import CustomerProfile
+
+    city = viewer_city.strip() if viewer_city else None
+    country = viewer_country.strip() if viewer_country else None
+
+    if city and country:
+        return city, country
+
+    profile = (
+        db.query(CustomerProfile)
+        .filter(CustomerProfile.user_id == viewer_user_id)
+        .first()
     )
+    if profile:
+        city = city or profile.city
+        country = country or profile.country
 
-    by_stylist_posts = (
-        db.query(Post)
-        .join(SalonServicePrice,
-              SalonServicePrice.sub_service_id == Post.sub_service_id)
-        .join(StylistService,
-              StylistService.salon_service_price_id == SalonServicePrice.id)
-        .options(joinedload(Post.media_items))
-        .filter(
-            *base_filters,
-            StylistService.stylist_id.in_(stylist_ids),
-        )
-        .limit(limit)
-        .all()
-    )
-
-    # ------------------------------------------------
-    # 3) By Salon (same salon, any stylist)
-    # ------------------------------------------------
-    by_salon_posts = []
-
-    salon = db.query(Salon).filter(Salon.user_id == post.user_id).first()
-    if salon:
-        by_salon_posts = (
-            db.query(Post)
-            .join(User, User.id == Post.user_id)
-            .join(Salon, Salon.user_id == User.id)
-            .options(joinedload(Post.media_items))
-            .filter(
-                *base_filters,
-                Salon.id == salon.id,
-            )
-            .limit(limit)
-            .all()
-        )
-
-    return SimilarSection(
-        by_service=[_post_to_preview(p) for p in by_service_posts],
-        by_stylist=[_post_to_preview(p) for p in by_stylist_posts],
-        by_salon=[_post_to_preview(p) for p in by_salon_posts],
-    )
+    return city, country
 
 
-
-
-# Other Posts 
 def _build_other_posts_section(
     db: Session,
     viewer_user_id: str,
@@ -864,12 +869,42 @@ def _build_other_posts_section(
     exclude_post_ids: set[str],
     cursor: Optional[datetime] = None,
     limit: int = 10,
+    viewer_city: Optional[str] = None,
+    viewer_country: Optional[str] = None,
 ) -> OtherPostsSection:
+    """
+    Continuation feed shown after the similar section.
+    Scope (OR):
+      - posts from salons the viewer follows
+      - posts from salons in the viewer's city/country (for travelers)
+    """
+
+    followed_salon_user_ids = (
+        select(Salon.user_id)
+        .where(
+            Salon.id.in_(
+                select(SalonFollower.salon_id)
+                .where(SalonFollower.user_id == viewer_user_id)
+            )
+        )
+    )
+
+    city, country = _resolve_viewer_location(
+        db, viewer_user_id, viewer_city, viewer_country,
+    )
+
+    signals = [Post.user_id.in_(followed_salon_user_ids)]
+
+    if city:
+        signals.append(SalonLocation.city == city)
+    if country:
+        signals.append(SalonLocation.country == country)
 
     query = (
         db.query(Post)
         .join(User, Post.user_id == User.id)
-        .outerjoin(Salon, Salon.user_id == User.id)
+        .join(Salon, Salon.user_id == User.id)
+        .outerjoin(SalonLocation, SalonLocation.salon_id == Salon.id)
         .outerjoin(PostSettings, PostSettings.post_id == Post.id)
         .options(
             joinedload(Post.user).joinedload(User.profile_picture),
@@ -883,27 +918,12 @@ def _build_other_posts_section(
                 PostSettings.id.is_(None),
             ),
             Post.id.notin_(exclude_post_ids),
+            or_(*signals),
         )
     )
 
-    # cursor pagination (THIS WAS MISSING)
     if cursor:
         query = query.filter(Post.created_at < cursor)
-
-    signals = []
-
-    if post.sub_service_id:
-        signals.append(Post.sub_service_id == post.sub_service_id)
-
-    salon = db.query(Salon).filter(Salon.user_id == post.user_id).first()
-    if salon:
-        signals.append(Salon.id == salon.id)
-
-    if salon and salon.location and salon.location.region:
-        signals.append(SalonLocation.region == salon.location.region)
-
-    if signals:
-        query = query.filter(or_(*signals))
 
     posts = (
         query
@@ -1053,6 +1073,8 @@ async def get_other_posts_(
     db: Session,
     cursor: Optional[datetime] = None,
     limit: int = 10,
+    viewer_city: Optional[str] = None,
+    viewer_country: Optional[str] = None,
 ):
     """
     Paginated continuation feed for a single post view.
@@ -1069,6 +1091,8 @@ async def get_other_posts_(
         exclude_post_ids={post_id},
         cursor=cursor,
         limit=limit,
+        viewer_city=viewer_city,
+        viewer_country=viewer_country,
     )
 
 
@@ -1081,6 +1105,8 @@ async def get_single_post_view_(
     post_id: str,
     db: Session,
     other_cursor: Optional[datetime] = None,
+    viewer_city: Optional[str] = None,
+    viewer_country: Optional[str] = None,
 ) -> SinglePostResponse:
     """
     Single Post View aggregator.
@@ -1139,6 +1165,7 @@ async def get_single_post_view_(
 
     similar = _build_similar_section(
         db=db,
+        viewer_user_id=current_user.user_id,
         post=post,
     )
 
@@ -1161,12 +1188,8 @@ async def get_single_post_view_(
         service_price_id=service.id if service.id else None,
     )
     
-    # 
     exclude_ids = {post.id}
-
-    exclude_ids.update(p.id for p in similar.by_service)
-    exclude_ids.update(p.id for p in similar.by_stylist)
-    exclude_ids.update(p.id for p in similar.by_salon)
+    exclude_ids.update(p.id for p in similar.items)
 
     sponsored_salons = _build_sponsored_salons_section(db=db)
 
@@ -1176,6 +1199,8 @@ async def get_single_post_view_(
         post=post,
         exclude_post_ids=exclude_ids,
         cursor=other_cursor,
+        viewer_city=viewer_city,
+        viewer_country=viewer_country,
     )
 
 

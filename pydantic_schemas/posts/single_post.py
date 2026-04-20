@@ -55,12 +55,12 @@ class ReviewSection(BaseModel):
 class PostPreview(BaseModel):
     id: str
     cover_image: str
+    salon_name: Optional[str] = None
+    salon_id: Optional[str] = None
 
 
 class SimilarSection(BaseModel):
-    by_service: List[PostPreview]
-    by_stylist: List[PostPreview]
-    by_salon: List[PostPreview]
+    items: List[PostPreview]
 
 
 # Sponsored Salon

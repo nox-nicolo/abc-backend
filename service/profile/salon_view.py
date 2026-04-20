@@ -378,6 +378,7 @@ async def view_salon_profile(
     is_following = False
     notifications_enabled = False
     is_blocked = False
+    is_owner = bool(viewer_id) and viewer_id == salon.user_id
 
     if viewer_id:
         follow = (
@@ -600,6 +601,7 @@ async def view_salon_profile(
             "is_following": is_following,
             "notifications_enabled": notifications_enabled,
             "is_blocked": is_blocked,
+            "is_owner": is_owner,
         },
         "metrics": {
             "followers_count": followers_count,

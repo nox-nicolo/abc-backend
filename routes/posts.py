@@ -10,9 +10,19 @@ from models.posts.posts import Hashtag
 from pydantic_schemas.auth.jwt_token import TokenData
 from pydantic_schemas.posts.create_post import CreatePostPayload, PostSettingsSchema
 from pydantic_schemas.posts.get_post import PostLikeSchema
+from pydantic_schemas.posts.comment import (
+    CommentCreateRequest,
+    CommentItem,
+    CommentListResponse,
+)
 from pydantic_schemas.posts.single_post import SinglePostResponse
 from routes.post_router_helper import FormPostData
 from service.auth.JWT.oauth2 import get_current_user
+from service.posts.comment_post import (
+    create_comment,
+    delete_comment,
+    list_comments,
+)
 from service.posts.create_post import create_post_
 from service.posts.get_post import (
     get_posts_,
@@ -95,6 +105,8 @@ async def get_posts_collection(
 async def get_single_post(
     post_id: str,
     other_cursor: Optional[datetime] = Query(None),
+    viewer_city: Optional[str] = Query(None),
+    viewer_country: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
 ):
@@ -116,7 +128,9 @@ async def get_single_post(
         db=db,
         post_id=post_id,
         current_user=current_user,
-        other_cursor=other_cursor,   
+        other_cursor=other_cursor,
+        viewer_city=viewer_city,
+        viewer_country=viewer_country,
     )
 
     if not post_view:
@@ -243,6 +257,8 @@ async def get_other_posts(
     post_id: str,
     cursor: Optional[datetime] = Query(None),
     limit: int = Query(10, le=30),
+    viewer_city: Optional[str] = Query(None),
+    viewer_country: Optional[str] = Query(None),
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -252,6 +268,70 @@ async def get_other_posts(
         db=db,
         cursor=cursor,
         limit=limit,
+        viewer_city=viewer_city,
+        viewer_country=viewer_country,
+    )
+
+
+# ---------------------------------------------------
+# Comments
+# ---------------------------------------------------
+@posts.get(
+    "/{post_id}/comments",
+    response_model=CommentListResponse,
+)
+def get_comments(
+    post_id: str,
+    parent_comment_id: Optional[str] = Query(None),
+    cursor: Optional[str] = Query(None),
+    limit: int = Query(20, le=50),
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return list_comments(
+        post_id=post_id,
+        viewer_user_id=current_user.user_id,
+        db=db,
+        parent_comment_id=parent_comment_id,
+        cursor=cursor,
+        limit=limit,
+    )
+
+
+@posts.post(
+    "/{post_id}/comments",
+    response_model=CommentItem,
+    status_code=201,
+)
+def post_comment(
+    post_id: str,
+    payload: CommentCreateRequest,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return create_comment(
+        post_id=post_id,
+        user_id=current_user.user_id,
+        payload=payload,
+        db=db,
+    )
+
+
+@posts.delete(
+    "/{post_id}/comments/{comment_id}",
+    status_code=200,
+)
+def remove_comment(
+    post_id: str,
+    comment_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return delete_comment(
+        post_id=post_id,
+        comment_id=comment_id,
+        user_id=current_user.user_id,
+        db=db,
     )
 
 

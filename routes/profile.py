@@ -29,6 +29,8 @@ from service.profile.settings.salon_gallery import manage_salon_gallery_
 from service.profile.settings.salon_profile import update_salon_profile_
 from service.profile.settings.salon_working_hours import update_salon_working_hours_
 from service.profile.settings.upload_account_media import upload_account_media_
+from service.profile.salon_activity import get_salon_activity
+from models.profile.salon import Salon
 from service.profile.top_salon import get_top_salons
 
 
@@ -51,6 +53,49 @@ async def salon_profile(db: Session = Depends(get_db), current_user: TokenData =
     # If profile_salon returns a dict, FastAPI will validate it against SalonProfileResponse
     return await profile_salon(db=db, user=user_id)
 
+
+
+# -------------------------------------------------------------------
+# Salon Activity Feed
+# -------------------------------------------------------------------
+@profile.get("/salon/activity", status_code=status.HTTP_200_OK)
+async def salon_activity_feed_owner(
+    limit: int = Query(30, ge=1, le=50),
+    cursor: str | None = Query(None),
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Owner-only feed: resolves the caller's salon and returns full activity."""
+    salon = db.query(Salon).filter(Salon.user_id == current_user.user_id).first()
+    if not salon:
+        return {"items": [], "next_cursor": None}
+
+    return await get_salon_activity(
+        salon_id=salon.id,
+        viewer_user_id=current_user.user_id,
+        db=db,
+        limit=limit,
+        cursor=cursor,
+    )
+
+
+@profile.get("/salon/{salon_id}/activity", status_code=status.HTTP_200_OK)
+async def salon_activity_feed_by_id(
+    salon_id: str,
+    limit: int = Query(30, ge=1, le=50),
+    cursor: str | None = Query(None),
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Viewer-aware feed. Owner sees everything; others see public events only."""
+    return await get_salon_activity(
+        salon_id=salon_id,
+        viewer_user_id=current_user.user_id,
+        db=db,
+        limit=limit,
+        cursor=cursor,
+    )
+# -------------------------------------------------------------------
 
 
 # -------------------------------------------------------------------

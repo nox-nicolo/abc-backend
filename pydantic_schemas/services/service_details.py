@@ -32,6 +32,8 @@ class SalonServiceDetailsItem(BaseModel):
     currency: Optional[str] = None
     duration_minutes: Optional[int] = None
     rating: Optional[float] = None
+    # Only present in minor-service mode (direct booking identifier)
+    salon_service_price_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

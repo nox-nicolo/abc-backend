@@ -2,11 +2,13 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.middleware.cors import CORSMiddleware
-from routes import auth, booking, posts, profile, search, service, setup_profile, users
+from routes import auth, booking, notifications, posts, profile, search, service, setup_profile, users
 from core.database import engine
 from models.base import Base
 import models.auth.customer_profile  # register CustomerProfile table
 import models.auth.refresh_token     # register RefreshToken table
+import models.profile.notification_preferences  # register UserNotificationPreference table
+import models.notifications.notification         # register Notification table
 
 app = FastAPI(docs_url=None)  # Disable default Swagger UI
 
@@ -39,6 +41,7 @@ app.include_router(users.users)
 app.include_router(profile.profile)
 app.include_router(search.search)
 app.include_router(booking.booking)
+app.include_router(notifications.notifications)
 
 
 # ----------------------------

@@ -21,6 +21,7 @@ from pydantic_schemas.booking.booking import (
 
 from pydantic_schemas.booking.choose_salon import SalonOfferForBooking
 from service.booking.helper import _auto_no_show, _now
+from service.notification.notification import create_notification
 
 
 salon_url = ImageURL.SALON_COVER_URL.value
@@ -45,10 +46,13 @@ async def create_booking_service(
             "User not found",
         )
 
-    # validate salon service price (bookable unit)
+    # Lock the offering row for the duration of this transaction so two
+    # concurrent bookings on the same slot serialize instead of both passing
+    # the overlap check.
     offering = (
         db.query(SalonServicePrice)
         .filter(SalonServicePrice.id == payload.salon_service_price_id)
+        .with_for_update()
         .first()
     )
     if not offering:
@@ -101,6 +105,20 @@ async def create_booking_service(
     )
 
     db.add(booking)
+    db.flush()
+
+    # Notify salon owner that a new booking came in.
+    salon = db.query(Salon).filter(Salon.id == offering.salon_id).first()
+    if salon:
+        create_notification(
+            db=db,
+            recipient_id=salon.user_id,
+            actor_id=user_id,
+            type="booking_new",
+            booking_id=booking.id,
+            commit=False,
+        )
+
     db.commit()
     db.refresh(booking)
 
@@ -149,7 +167,12 @@ async def get_booking_service(
     user_id: str,
 ) -> Booking:
 
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    booking = (
+        db.query(Booking)
+        .options(joinedload(Booking.salon))
+        .filter(Booking.id == booking_id)
+        .first()
+    )
     if not booking:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
@@ -212,6 +235,18 @@ async def cancel_booking_service(
     booking.cancelled_by = "user"
     booking.cancel_reason = payload.reason
 
+    # Notify salon owner that the customer cancelled.
+    salon = db.query(Salon).filter(Salon.id == booking.salon_id).first()
+    if salon:
+        create_notification(
+            db=db,
+            recipient_id=salon.user_id,
+            actor_id=user_id,
+            type="booking_cancelled",
+            booking_id=booking.id,
+            commit=False,
+        )
+
     db.commit()
     db.refresh(booking)
 
@@ -269,7 +304,6 @@ async def get_salon_bookings_service(
     bookings = query.order_by(Booking.start_at.asc()).all()
 
     for booking in bookings:
-        print(booking.cancel_reason)
         _auto_no_show(booking)
 
     db.commit()
@@ -310,7 +344,15 @@ async def confirm_booking_service(
 
     booking.status = BookingStatus.CONFIRMED
     booking.confirmed_at = _now()
-    print(booking.customer.name)  # Accessing the username of the customer
+
+    create_notification(
+        db=db,
+        recipient_id=booking.customer_id,
+        actor_id=user_id,
+        type="booking_confirmed",
+        booking_id=booking.id,
+        commit=False,
+    )
 
     db.commit()
     db.refresh(booking)
@@ -329,7 +371,12 @@ async def reject_booking_service(
     user_id: str,
 ) -> Booking:
 
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    booking = (
+        db.query(Booking)
+        .options(joinedload(Booking.salon))
+        .filter(Booking.id == booking_id)
+        .first()
+    )
     if not booking:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
@@ -350,6 +397,15 @@ async def reject_booking_service(
 
     booking.status = BookingStatus.REJECTED
 
+    create_notification(
+        db=db,
+        recipient_id=booking.customer_id,
+        actor_id=user_id,
+        type="booking_rejected",
+        booking_id=booking.id,
+        commit=False,
+    )
+
     db.commit()
     db.refresh(booking)
 
@@ -367,7 +423,12 @@ async def complete_booking_service(
     user_id: str,
 ) -> Booking:
 
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    booking = (
+        db.query(Booking)
+        .options(joinedload(Booking.salon))
+        .filter(Booking.id == booking_id)
+        .first()
+    )
     if not booking:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
@@ -394,6 +455,15 @@ async def complete_booking_service(
 
     booking.status = BookingStatus.COMPLETED
     booking.completed_at = _now()
+
+    create_notification(
+        db=db,
+        recipient_id=booking.customer_id,
+        actor_id=user_id,
+        type="booking_completed",
+        booking_id=booking.id,
+        commit=False,
+    )
 
     db.commit()
     db.refresh(booking)
@@ -463,6 +533,17 @@ async def reschedule_booking_service(
     booking.start_at = payload.start_at
     booking.end_at = new_end_at
     booking.status = BookingStatus.PENDING  # reset to pending so salon re-confirms
+
+    salon = db.query(Salon).filter(Salon.id == booking.salon_id).first()
+    if salon:
+        create_notification(
+            db=db,
+            recipient_id=salon.user_id,
+            actor_id=user_id,
+            type="booking_rescheduled",
+            booking_id=booking.id,
+            commit=False,
+        )
 
     db.commit()
     db.refresh(booking)
