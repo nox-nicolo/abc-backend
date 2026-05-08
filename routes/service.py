@@ -5,8 +5,13 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 
 from core.database import get_db
 from pydantic_schemas.auth.jwt_token import TokenData
-from pydantic_schemas.services.event import EventCard
-from pydantic_schemas.services.service import MajorServiceResponse, MinorServiceResponse
+from pydantic_schemas.pagination import pagination_meta
+from pydantic_schemas.services.event import EventCard, EventPage
+from pydantic_schemas.services.service import (
+    MajorServicePage,
+    MinorServicePage,
+    ServiceSummaryPage,
+)
 from pydantic_schemas.services.service_details import ServiceDetailsResponse
 from service.auth.JWT.oauth2 import get_current_user
 from service.services.event import get_featured_events
@@ -21,14 +26,19 @@ service = APIRouter(
 
 
 # get all services
-@service.get("/")
-async def get_all(db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_user)):
+@service.get("/", response_model=ServiceSummaryPage)
+async def get_all(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
     """
     Get all services
     """
     
     try: 
-        return await all_services(db= db)
+        return await all_services(db=db, limit=limit, offset=offset)
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
     except Exception as e:
@@ -64,15 +74,20 @@ async def upload_major(
 
 
 # get major service 
-@service.get("/major", response_model=list[MajorServiceResponse])
-async def get_major(db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_user)):
+@service.get("/major", response_model=MajorServicePage)
+async def get_major(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
     
     """
     Get major service
     
     """
     try:
-        result = await _get_major(db = db)
+        result = await _get_major(db=db, limit=limit, offset=offset)
         return result
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content=['detail', e.detail])
@@ -83,14 +98,19 @@ async def get_major(db: Session = Depends(get_db), current_user: TokenData = Dep
 
 
 # get minor service 
-@service.get("/minor", response_model=list[MinorServiceResponse])
-async def get_minor(db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_user)):
+@service.get("/minor", response_model=MinorServicePage)
+async def get_minor(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
     """
     Get minor service
     """
     
     try:
-        return await _get_minor(db = db)
+        return await _get_minor(db=db, limit=limit, offset=offset)
     except HTTPException as e:
         return JSONResponse(
                 status_code=e.status_code, 
@@ -103,15 +123,16 @@ async def get_minor(db: Session = Depends(get_db), current_user: TokenData = Dep
         )
         
 
-@service.get("", response_model=list[EventCard])
+@service.get("", response_model=EventPage)
 def fetch_events(
-    limit: int = Query(10, le=20),
+    limit: int = Query(10, ge=1, le=20),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
 
-    results = get_featured_events(db, limit)
+    results, total = get_featured_events(db, limit, offset)
 
-    return [
+    items = [
         EventCard(
             event_id=sub.id,
             title=sub.name,
@@ -128,6 +149,10 @@ def fetch_events(
         )
         for sub, price, salon in results
     ]
+    return {
+        "items": items,
+        "pagination": pagination_meta(total=total, limit=limit, offset=offset),
+    }
 
 
 # Upload Minor services

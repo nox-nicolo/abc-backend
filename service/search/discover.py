@@ -15,6 +15,7 @@ from models.booking.booking import Booking
 from models.posts.posts import Post
 from models.profile.salon import Salon, SalonLocation
 from models.services.service import SubServices
+from pydantic_schemas.pagination import pagination_meta
 
 _profile_url = f"{BASE_URL}/{ImageDirectories.PROFILE_DIR.value}"
 _salon_url = f"{BASE_URL}/{ImageDirectories.SALON_COVER_DIR.value}"
@@ -45,7 +46,8 @@ def get_nearby_salons(
     lng: float,
     radius_km: float = 15.0,
     limit: int = 10,
-) -> List[dict]:
+    offset: int = 0,
+) -> dict:
     delta = radius_km / 111.0
 
     rows = (
@@ -87,7 +89,11 @@ def get_nearby_salons(
             })
 
     results.sort(key=lambda x: x["distance_km"])
-    return results[:limit]
+    total = len(results)
+    return {
+        "items": results[offset: offset + limit],
+        "pagination": pagination_meta(total=total, limit=limit, offset=offset),
+    }
 
 
 # ── Top salons (by booking count) ─────────────────────────────────────────────
@@ -96,9 +102,10 @@ def get_top_salons(
     db: Session,
     current_user_id: str,
     limit: int = 10,
-) -> List[dict]:
+    offset: int = 0,
+) -> dict:
     # Use a flat column query — avoids joinedload conflict with group_by aggregates
-    rows = (
+    query = (
         db.query(
             Salon.id,
             Salon.title,
@@ -120,11 +127,16 @@ def get_top_salons(
             ProfilePicture.file_name,
         )
         .order_by(func.count(Booking.id).desc())
+    )
+    total = query.count()
+    rows = (
+        query
+        .offset(offset)
         .limit(limit)
         .all()
     )
 
-    return [
+    items = [
         {
             "id": row.id,
             "title": row.title or "",
@@ -134,15 +146,19 @@ def get_top_salons(
         }
         for row in rows
     ]
+    return {
+        "items": items,
+        "pagination": pagination_meta(total=total, limit=limit, offset=offset),
+    }
 
 
 # ── Trending styles (sub-services by recent post count) ───────────────────────
 
-def get_trending_styles(db: Session, limit: int = 10) -> List[dict]:
+def get_trending_styles(db: Session, limit: int = 10, offset: int = 0) -> dict:
     """Returns the most-posted sub-services in the last 30 days with their images."""
     since = datetime.now(timezone.utc) - timedelta(days=30)
 
-    rows = (
+    query = (
         db.query(
             SubServices.id,
             SubServices.name,
@@ -153,11 +169,16 @@ def get_trending_styles(db: Session, limit: int = 10) -> List[dict]:
         .filter(Post.created_at >= since)
         .group_by(SubServices.id, SubServices.name, SubServices.file_name)
         .order_by(func.count(Post.id).desc())
+    )
+    total = query.count()
+    rows = (
+        query
+        .offset(offset)
         .limit(limit)
         .all()
     )
 
-    return [
+    items = [
         {
             "id": row.id,
             "name": row.name,
@@ -166,3 +187,7 @@ def get_trending_styles(db: Session, limit: int = 10) -> List[dict]:
         }
         for row in rows
     ]
+    return {
+        "items": items,
+        "pagination": pagination_meta(total=total, limit=limit, offset=offset),
+    }

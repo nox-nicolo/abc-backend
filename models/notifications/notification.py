@@ -63,4 +63,6 @@ class Notification(Base):
     __table_args__ = (
         Index("ix_notifications_recipient_created", "recipient_id", "created_at"),
         Index("ix_notifications_recipient_unread", "recipient_id", "is_read"),
+        Index("ix_notifications_recipient_read_created", "recipient_id", "is_read", "created_at"),
+        Index("ix_notifications_actor_created", "actor_id", "created_at"),
     )

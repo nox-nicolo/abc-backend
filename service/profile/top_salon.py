@@ -147,6 +147,7 @@ from models.profile.salon import (
 )
 from models.posts.posts import Post
 from models.booking.booking import Booking, BookingStatus
+from pydantic_schemas.pagination import pagination_meta
 from pydantic_schemas.profile.top_salon import TopSalonCard
 from service.profile.top_salon_ranking import calculate_salon_score
 
@@ -154,7 +155,7 @@ PROFILE_PIC = f"{BASE_URL}/{ImageDirectories.PROFILE_DIR.value}"
 COVER_PIC = f"{BASE_URL}/{ImageDirectories.SALON_COVER_DIR.value}"
 
 
-def get_top_salons(db: Session, limit: int = 10):
+def get_top_salons(db: Session, limit: int = 10, offset: int = 0):
     followers_sq = (
         db.query(
             SalonFollower.salon_id.label("salon_id"),
@@ -233,7 +234,8 @@ def get_top_salons(db: Session, limit: int = 10):
         ranked.append((score, salon, city))
 
     ranked.sort(key=lambda x: x[0], reverse=True)
-    top_salons = ranked[:limit]
+    total = len(ranked)
+    top_salons = ranked[offset: offset + limit]
 
     results = []
     for _, salon, city in top_salons:
@@ -258,4 +260,7 @@ def get_top_salons(db: Session, limit: int = 10):
             )
         )
 
-    return {"results": results}
+    return {
+        "results": results,
+        "pagination": pagination_meta(total=total, limit=limit, offset=offset),
+    }

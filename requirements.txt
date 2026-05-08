@@ -4,12 +4,14 @@ passlib
 python-jose
 gunicorn
 sqlalchemy
+alembic
+celery[redis]
 psycopg2-binary
 bcrypt
 fastapi_mail
 boto3
 resend
+sentry-sdk[fastapi]
 
 PyJWT
 python-decouple
-

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
@@ -36,3 +36,8 @@ class SearchHistory(Base):
     # Relationship
     history_user = relationship("User", back_populates="search_histories",)
 
+    __table_args__ = (
+        Index("ix_search_histories_user_created", "user_id", "created_at"),
+        Index("ix_search_histories_user_query", "user_id", "query"),
+        Index("ix_search_histories_entity_entity_id", "entity", "entity_id"),
+    )

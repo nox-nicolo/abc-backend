@@ -18,6 +18,7 @@ from pydantic_schemas.booking.booking import (
     BookingReschedule,
     BookingReviewCreate,
 )
+from pydantic_schemas.pagination import pagination_meta
 
 from pydantic_schemas.booking.choose_salon import SalonOfferForBooking
 from service.booking.helper import _auto_no_show, _now
@@ -135,7 +136,9 @@ async def get_user_bookings_service(
     user_id: str,
     status: Optional[BookingStatus],
     upcoming: Optional[bool],
-) -> List[Booking]:
+    limit: int,
+    offset: int,
+) -> dict:
 
     query = db.query(Booking).filter(Booking.customer_id == user_id)
 
@@ -147,13 +150,22 @@ async def get_user_bookings_service(
     elif upcoming is False:
         query = query.filter(Booking.start_at < _now())
 
-    bookings = query.order_by(Booking.start_at.desc()).all()
+    total = query.count()
+    bookings = (
+        query.order_by(Booking.start_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
     for booking in bookings:
         _auto_no_show(booking)
 
     db.commit()
-    return bookings
+    return {
+        "items": bookings,
+        "pagination": pagination_meta(total=total, limit=limit, offset=offset),
+    }
 
 
 # ---------------------------------------------------------
@@ -264,7 +276,9 @@ async def get_salon_bookings_service(
     status: Optional[BookingStatus],
     upcoming: Optional[bool],
     date: Optional[str],
-) -> List[Booking]:
+    limit: int,
+    offset: int,
+) -> dict:
 
     salon = db.query(Salon).filter(Salon.user_id == user_id).first()
     if not salon:
@@ -301,13 +315,22 @@ async def get_salon_bookings_service(
                 "Invalid date format (expected YYYY-MM-DD)",
             )
 
-    bookings = query.order_by(Booking.start_at.asc()).all()
+    total = query.count()
+    bookings = (
+        query.order_by(Booking.start_at.asc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
     for booking in bookings:
         _auto_no_show(booking)
 
     db.commit()
-    return bookings
+    return {
+        "items": bookings,
+        "pagination": pagination_meta(total=total, limit=limit, offset=offset),
+    }
 
 
 # ---------------------------------------------------------
@@ -595,13 +618,15 @@ async def get_salons_for_style(
     *,
     db: Session,
     sub_service_id: str,
-) -> list[SalonOfferForBooking]:
+    limit: int,
+    offset: int,
+) -> dict:
     """
     Fetch salons offering a given sub service,
     including price and duration.
     """
 
-    rows = (
+    query = (
         db.query(
             SalonServicePrice.id.label("salon_service_price_id"),
 
@@ -623,10 +648,16 @@ async def get_salons_for_style(
         .filter(SalonServicePrice.sub_service_id == sub_service_id)
         # .filter(SalonServicePrice.is_active.is_(True))
         .order_by(SalonServicePrice.price_max.asc())
+    )
+    total = query.count()
+    rows = (
+        query
+        .offset(offset)
+        .limit(limit)
         .all()
     )
 
-    return [
+    results = [
         SalonOfferForBooking(
             salon_service_price_id=row.salon_service_price_id,
 
@@ -644,3 +675,8 @@ async def get_salons_for_style(
         )
         for row in rows
     ]
+
+    return {
+        "results": results,
+        "pagination": pagination_meta(total=total, limit=limit, offset=offset),
+    }

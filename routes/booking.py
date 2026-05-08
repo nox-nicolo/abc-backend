@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from core.database import get_db
 from core.enumeration import BookingStatus
+from core.rate_limit import enforce_rate_limit
 
 from pydantic_schemas.auth.jwt_token import TokenData
 from pydantic_schemas.booking.booking import (
@@ -12,6 +13,8 @@ from pydantic_schemas.booking.booking import (
     BookingResponse,
     BookingCancel,
     BookingListItem,
+    BookingListPage,
+    BookingResponsePage,
     BookingReschedule,
     BookingReviewCreate,
     BookingReviewResponse,
@@ -37,11 +40,17 @@ booking = APIRouter(
 )
 async def create_booking(
     payload: BookingCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
 ):
-    print("BOOKING PAYLOAD:", payload)
-    print("USER:", current_user.user_id)
+    enforce_rate_limit(
+        request,
+        bucket="booking:create",
+        limit=10,
+        window_seconds=300,
+        user_id=current_user.user_id,
+    )
     try:
         return await create_booking_service(
             db=db,
@@ -65,12 +74,14 @@ async def create_booking(
 # -------------------------------------------------------------------
 @booking.get(
     "/my",
-    response_model=List[BookingListItem],
+    response_model=BookingListPage,
     status_code=status.HTTP_200_OK
 )
 async def get_my_bookings(
     status: Optional[BookingStatus] = Query(None),
     upcoming: Optional[bool] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
 ):
@@ -80,6 +91,8 @@ async def get_my_bookings(
             user_id=current_user.user_id,
             status=status,
             upcoming=upcoming,
+            limit=limit,
+            offset=offset,
         )
     except HTTPException as e:
         return JSONResponse(
@@ -99,6 +112,8 @@ async def get_my_bookings(
 )
 async def list_salons_for_style(
     sub_service_id: str = Query(..., description="Selected style / sub service"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     """
@@ -108,9 +123,11 @@ async def list_salons_for_style(
     results = await get_salons_for_style(
         db=db,
         sub_service_id=sub_service_id,
+        limit=limit,
+        offset=offset,
     )
 
-    return {"results": results}
+    return results
 
 
 
@@ -119,13 +136,15 @@ async def list_salons_for_style(
 # -------------------------------------------------------------------
 @booking.get(
     "/salon",
-    response_model=List[BookingResponse],
+    response_model=BookingResponsePage,
     status_code=status.HTTP_200_OK
 )
 async def get_salon_bookings(
     status: Optional[BookingStatus] = Query(None),
     upcoming: Optional[bool] = Query(None),
     date: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
 ):
@@ -136,6 +155,8 @@ async def get_salon_bookings(
             status=status,
             upcoming=upcoming,
             date=date,
+            limit=limit,
+            offset=offset,
         )
     except HTTPException as e:
         return JSONResponse(
@@ -191,9 +212,17 @@ async def get_booking(
 async def cancel_booking(
     booking_id: str,
     payload: BookingCancel,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
 ):
+    enforce_rate_limit(
+        request,
+        bucket="booking:cancel",
+        limit=20,
+        window_seconds=300,
+        user_id=current_user.user_id,
+    )
     try:
         return await cancel_booking_service(
             db=db,
@@ -223,9 +252,17 @@ async def cancel_booking(
 )
 async def confirm_booking(
     booking_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
 ):
+    enforce_rate_limit(
+        request,
+        bucket="booking:confirm",
+        limit=30,
+        window_seconds=300,
+        user_id=current_user.user_id,
+    )
     try:
         return await confirm_booking_service(
             db=db,
@@ -254,9 +291,17 @@ async def confirm_booking(
 )
 async def reject_booking(
     booking_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
 ):
+    enforce_rate_limit(
+        request,
+        bucket="booking:reject",
+        limit=30,
+        window_seconds=300,
+        user_id=current_user.user_id,
+    )
     try:
         return await reject_booking_service(
             db=db,
@@ -285,9 +330,17 @@ async def reject_booking(
 )
 async def complete_booking(
     booking_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
 ):
+    enforce_rate_limit(
+        request,
+        bucket="booking:complete",
+        limit=30,
+        window_seconds=300,
+        user_id=current_user.user_id,
+    )
     try:
         return await complete_booking_service(
             db=db,
@@ -317,9 +370,17 @@ async def complete_booking(
 async def reschedule_booking(
     booking_id: str,
     payload: BookingReschedule,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
 ):
+    enforce_rate_limit(
+        request,
+        bucket="booking:reschedule",
+        limit=10,
+        window_seconds=300,
+        user_id=current_user.user_id,
+    )
     try:
         return await reschedule_booking_service(
             db=db,
@@ -344,9 +405,17 @@ async def reschedule_booking(
 async def leave_review(
     booking_id: str,
     payload: BookingReviewCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
 ):
+    enforce_rate_limit(
+        request,
+        bucket="booking:review",
+        limit=10,
+        window_seconds=300,
+        user_id=current_user.user_id,
+    )
     try:
         return await create_review_service(
             db=db,
@@ -363,4 +432,3 @@ async def leave_review(
 # -------------------------------------------------------------------
 # Choose salon for booking
 # -------------------------------------------------------------------
-

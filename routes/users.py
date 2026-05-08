@@ -2,7 +2,7 @@ import time
 from collections import deque
 from threading import Lock
 
-from fastapi import APIRouter, Request, status, HTTPException
+from fastapi import APIRouter, Query, Request, status, HTTPException
 from fastapi.params import Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy import func
@@ -72,11 +72,18 @@ async def update_my_profile(
 
 @users.get("/me/following", response_model=MyFollowingResponse)
 async def get_my_following_list(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     try:
-        return get_my_following(current_user.user_id, db)
+        return get_my_following(
+            current_user.user_id,
+            db,
+            limit=limit,
+            offset=offset,
+        )
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
     except Exception as e:
@@ -222,12 +229,18 @@ async def get_service_menu():
 # ++++++++++++++++++++++@GET+++++++++++++++++++++++++
 
 @users.get("/tags/search/")
-async def get_user_tags(query: str = "", current_user: TokenData = Depends(get_current_user), db: Session = Depends(get_db)):
+async def get_user_tags(
+    query: str = "",
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     
     user_id = current_user.user_id
     
     try:
-        return await search_user(query, user_id, db)
+        return await search_user(query, user_id, db, limit=limit, offset=offset)
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
     except Exception as e:
@@ -261,11 +274,16 @@ async def get_recent_user_tags():
     ]
     
 @users.get("/tags/recommended")
-async def get_recommended_user_tags(current_user: TokenData = Depends(get_current_user), db: Session = Depends(get_db)):
+async def get_recommended_user_tags(
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     
     user_id = current_user.user_id
     try:
-        return await recommend_user(user_id, db)
+        return await recommend_user(user_id, db, limit=limit, offset=offset)
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
     except Exception as e:

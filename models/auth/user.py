@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Enum, ForeignKey, LargeBinary, String, Boolean, DateTime
+from sqlalchemy import Column, Enum, ForeignKey, LargeBinary, String, Boolean, DateTime, Index
 from sqlalchemy.orm import relationship
 from core.enumeration import AccountAccessStatus
 from models.base import Base
@@ -58,4 +58,8 @@ class User(Base):
     def __repr__(self):
         return f"<User id={self.id}, username={self.username}, email={self.email}, account_access={self.account_access}>"
 
+    __table_args__ = (
+        Index("ix_users_role_access_created", "role", "account_access", "created_at"),
+        Index("ix_users_name", "name"),
+    )
 

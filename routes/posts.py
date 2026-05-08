@@ -1,11 +1,12 @@
 from datetime import datetime
 import json
 from typing import Optional, List
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from core.database import get_db
 from core.enumeration import PostCollectionType
+from core.rate_limit import enforce_rate_limit
 from models.posts.posts import Hashtag
 from pydantic_schemas.auth.jwt_token import TokenData
 from pydantic_schemas.posts.create_post import CreatePostPayload, PostSettingsSchema
@@ -203,9 +204,17 @@ def search_hashtags(
 @posts.post("/{post_id}/like")
 async def like_post(
     post_id: str,
+    request: Request,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    enforce_rate_limit(
+        request,
+        bucket="posts:like",
+        limit=60,
+        window_seconds=60,
+        user_id=current_user.user_id,
+    )
     return await toggle_like(
         post_id=post_id,
         user_id=current_user.user_id,
@@ -306,9 +315,17 @@ def get_comments(
 def post_comment(
     post_id: str,
     payload: CommentCreateRequest,
+    request: Request,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    enforce_rate_limit(
+        request,
+        bucket="posts:comment",
+        limit=20,
+        window_seconds=60,
+        user_id=current_user.user_id,
+    )
     return create_comment(
         post_id=post_id,
         user_id=current_user.user_id,

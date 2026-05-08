@@ -333,11 +333,12 @@ async def unfollow(
 @profile.get("/top", response_model=TopSalonResponse)
 async def fetch_top_salons(
     limit: int = Query(10, le=20),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     try:
         # Just call the service and return
-        return get_top_salons(db, limit)
+        return get_top_salons(db, limit, offset)
         
     except HTTPException as e:
         return JSONResponse(

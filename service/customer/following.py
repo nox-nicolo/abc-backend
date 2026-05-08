@@ -3,13 +3,19 @@ from sqlalchemy.orm import Session, joinedload
 from core.enumeration import ImageDirectories
 from core.r2_config import BASE_URL
 from models.profile.salon import SalonFollower
+from pydantic_schemas.pagination import pagination_meta
 from pydantic_schemas.customer.following import FollowedSalonItem, MyFollowingResponse
 
 PROFILE_IMAGE_BASE = f"{BASE_URL}/{ImageDirectories.PROFILE_DIR.value}"
 
 
-def get_my_following(user_id: str, db: Session) -> MyFollowingResponse:
-    follows = (
+def get_my_following(
+    user_id: str,
+    db: Session,
+    limit: int = 20,
+    offset: int = 0,
+) -> MyFollowingResponse:
+    query = (
         db.query(SalonFollower)
         .options(
             joinedload(SalonFollower.salon)
@@ -17,6 +23,12 @@ def get_my_following(user_id: str, db: Session) -> MyFollowingResponse:
             .joinedload("profile_picture")
         )
         .filter(SalonFollower.user_id == user_id)
+    )
+    total = query.count()
+    follows = (
+        query
+        .offset(offset)
+        .limit(limit)
         .all()
     )
 
@@ -38,4 +50,8 @@ def get_my_following(user_id: str, db: Session) -> MyFollowingResponse:
             )
         )
 
-    return MyFollowingResponse(items=items, total=len(items))
+    return MyFollowingResponse(
+        items=items,
+        total=total,
+        pagination=pagination_meta(total=total, limit=limit, offset=offset),
+    )

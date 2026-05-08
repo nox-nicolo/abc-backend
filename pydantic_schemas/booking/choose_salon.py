@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional
 from uuid import UUID
+from pydantic_schemas.pagination import PaginationMeta
 
 
 class SalonOfferForBooking(BaseModel):
@@ -30,3 +31,4 @@ from typing import List
 
 class SalonOfferListResponse(BaseModel):
     results: List[SalonOfferForBooking]
+    pagination: PaginationMeta

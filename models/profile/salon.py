@@ -565,6 +565,9 @@ class SalonFollower(Base):
 
     __table_args__ = (
         UniqueConstraint("salon_id", "user_id", name="uq_salon_user_follow"),
+        Index("ix_salon_followers_user_created", "user_id", "created_at"),
+        Index("ix_salon_followers_salon_created", "salon_id", "created_at"),
+        Index("ix_salon_followers_notifications", "salon_id", "notifications_enabled"),
     )
 
 
@@ -606,6 +609,8 @@ class SalonBlock(Base):
 
     __table_args__ = (
         UniqueConstraint("salon_id", "user_id", name="uq_user_block_salon"),
+        Index("ix_salon_blocks_user_created", "user_id", "created_at"),
+        Index("ix_salon_blocks_salon_created", "salon_id", "created_at"),
     )
 
 
@@ -643,4 +648,6 @@ class SalonReport(Base):
 
     __table_args__ = (
         UniqueConstraint("salon_id", "user_id", name="uq_user_report_salon"),
+        Index("ix_salon_reports_user_created", "user_id", "created_at"),
+        Index("ix_salon_reports_salon_created", "salon_id", "created_at"),
     )

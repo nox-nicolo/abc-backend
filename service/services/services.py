@@ -284,6 +284,7 @@ from core.database import get_db
 from core.enumeration import ImageDirectories
 from core.r2_config import BASE_URL, upload_file
 from models.services.service import Services, SubServices
+from pydantic_schemas.pagination import pagination_meta
 from pydantic_schemas.services.service import ChooseServiceRequest, DetailsServicesRequest
 
 
@@ -296,8 +297,14 @@ MINOR_IMAGE_URL = f"{BASE_URL}/{ImageDirMinor}"
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".svg", ".webp", ".tiff"}
 
 
-async def all_services(db: Session = Depends(get_db)):
-    all_services = db.query(Services).all()
+async def all_services(
+    db: Session = Depends(get_db),
+    limit: int = 50,
+    offset: int = 0,
+):
+    query = db.query(Services)
+    total = query.count()
+    all_services = query.offset(offset).limit(limit).all()
 
     result = [
         {
@@ -308,11 +315,20 @@ async def all_services(db: Session = Depends(get_db)):
         for service in all_services
     ]
 
-    return JSONResponse(content=result, status_code=200)
+    return {
+        "items": result,
+        "pagination": pagination_meta(total=total, limit=limit, offset=offset),
+    }
 
 
-async def _get_major(db: Session = Depends(get_db)):
-    data = db.query(Services).all()
+async def _get_major(
+    db: Session = Depends(get_db),
+    limit: int = 50,
+    offset: int = 0,
+):
+    query = db.query(Services)
+    total = query.count()
+    data = query.offset(offset).limit(limit).all()
     all_services = []
 
     for service in data:
@@ -327,7 +343,10 @@ async def _get_major(db: Session = Depends(get_db)):
             "rated": service.rated,
         })
 
-    return all_services
+    return {
+        "items": all_services,
+        "pagination": pagination_meta(total=total, limit=limit, offset=offset),
+    }
 
 
 async def major_upload(
@@ -393,8 +412,14 @@ async def delete_major():
     pass
 
 
-async def _get_minor(db: Session = Depends(get_db)):
-    data = db.query(SubServices).all()
+async def _get_minor(
+    db: Session = Depends(get_db),
+    limit: int = 50,
+    offset: int = 0,
+):
+    query = db.query(SubServices)
+    total = query.count()
+    data = query.offset(offset).limit(limit).all()
     all_services = []
 
     for sub_service in data:
@@ -421,7 +446,10 @@ async def _get_minor(db: Session = Depends(get_db)):
             "rated": sub_service.rated,
         })
 
-    return all_services
+    return {
+        "items": all_services,
+        "pagination": pagination_meta(total=total, limit=limit, offset=offset),
+    }
 
 
 async def _minor_upload(

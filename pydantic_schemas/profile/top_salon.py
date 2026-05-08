@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional, List
+from pydantic_schemas.pagination import PaginationMeta
 
 class TopSalonCard(BaseModel):
     salon_id: str
@@ -12,3 +13,4 @@ class TopSalonCard(BaseModel):
 
 class TopSalonResponse(BaseModel):
     results: List[TopSalonCard]
+    pagination: Optional[PaginationMeta] = None

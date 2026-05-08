@@ -61,6 +61,15 @@ class Booking(Base):
     @property
     def customer_name(self):
         return self.customer.name if self.customer else None
+
+    __table_args__ = (
+        Index("ix_bookings_customer_status_start", "customer_id", "status", "start_at"),
+        Index("ix_bookings_salon_status_start", "salon_id", "status", "start_at"),
+        Index("ix_bookings_service_status_start", "salon_service_price_id", "status", "start_at"),
+        Index("ix_bookings_customer_start", "customer_id", "start_at"),
+        Index("ix_bookings_salon_start", "salon_id", "start_at"),
+        Index("ix_bookings_created", "created_at"),
+    )
     
     
     
@@ -148,4 +157,3 @@ class ServiceReview(Base):
     Index("ix_review_service", "salon_service_price_id")
     Index("ix_review_salon", "salon_id")
     Index("ix_review_stylist", "stylist_id")
-

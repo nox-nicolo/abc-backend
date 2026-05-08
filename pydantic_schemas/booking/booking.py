@@ -2,6 +2,7 @@ from datetime import datetime
 from pydantic import AliasChoices, BaseModel, Field, ConfigDict
 from typing import Optional
 from core.enumeration import BookingStatus
+from pydantic_schemas.pagination import Page
 
 
 # -------------------------------------------------
@@ -116,3 +117,11 @@ class BookingListItem(BaseModel):
     cancel_reason: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class BookingListPage(Page[BookingListItem]):
+    pass
+
+
+class BookingResponsePage(Page[BookingResponse]):
+    pass

@@ -66,28 +66,43 @@ def nearby_salons(
     lng: float = Query(..., description="Longitude of the customer"),
     radius_km: float = Query(15.0, ge=1, le=100),
     limit: int = Query(10, ge=1, le=30),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
 ):
-    return get_nearby_salons(db=db, lat=lat, lng=lng, radius_km=radius_km, limit=limit)
+    return get_nearby_salons(
+        db=db,
+        lat=lat,
+        lng=lng,
+        radius_km=radius_km,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @search.get("/top-salons", summary="Top salons by number of bookings")
 def top_salons(
     limit: int = Query(10, ge=1, le=30),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
 ):
-    return get_top_salons(db=db, current_user_id=current_user.user_id, limit=limit)
+    return get_top_salons(
+        db=db,
+        current_user_id=current_user.user_id,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @search.get("/trending", summary="Trending hashtag styles in the last 30 days")
 def trending_styles(
     limit: int = Query(10, ge=1, le=30),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
 ):
-    return get_trending_styles(db=db, limit=limit)
+    return get_trending_styles(db=db, limit=limit, offset=offset)
 
 
 # Search Result

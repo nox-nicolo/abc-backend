@@ -1,29 +1,43 @@
 
-
+import os
 
 from fastapi.responses import JSONResponse
 from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
-from pydantic_schemas.auth.send_code import EmailSchema
 
 # send code via mail
 conf = ConnectionConfig(
-    MAIL_USERNAME = "nicolooseph@gmail.com",  # Replace with your actual Gmail address
-    MAIL_PASSWORD = "vnkd vrcx gflf yhdf" , # Replace with your Gmail password (consider app passwords for security)
-    MAIL_SERVER = "smtp.gmail.com",
-    MAIL_PORT = 465, # Gmail SMTP port for STARTTLS 587, # SSL port is 465
-    MAIL_FROM = "nicolooseph@gmail.com",  # Sender email address
-    MAIL_FROM_NAME = "African Beauty Community",  # Sender name
+    MAIL_USERNAME=os.getenv("MAIL_USERNAME", "nicolooseph@gmail.com"),
+    MAIL_PASSWORD=os.getenv("MAIL_PASSWORD", "vnkd vrcx gflf yhdf"),
+    MAIL_SERVER=os.getenv("MAIL_SERVER", "smtp.gmail.com"),
+    MAIL_PORT=int(os.getenv("MAIL_PORT", "465")),
+    MAIL_FROM=os.getenv("MAIL_FROM", "nicolooseph@gmail.com"),
+    MAIL_FROM_NAME=os.getenv("MAIL_FROM_NAME", "African Beauty Community"),
 
     # Encryption settings (recommended)
-    MAIL_STARTTLS = True,
-    MAIL_SSL_TLS = False,  # Use STARTTLS instead of SSL
+    MAIL_STARTTLS=os.getenv("MAIL_STARTTLS", "true").lower() == "true",
+    MAIL_SSL_TLS=os.getenv("MAIL_SSL_TLS", "false").lower() == "true",
 
     # Other settings (generally recommended)
-    USE_CREDENTIALS = True,
-    VALIDATE_CERTS = True,
+    USE_CREDENTIALS=True,
+    VALIDATE_CERTS=True,
 )
 
-async def   mail_send(code: str, email: EmailSchema):
+
+def enqueue_verification_email(code: str, email: str) -> bool:
+    if os.getenv("BACKGROUND_JOBS_ENABLED", "false").lower() != "true":
+        return False
+
+    try:
+        from worker.tasks import send_verification_email
+
+        send_verification_email.delay(code=code, email=email)
+        return True
+    except Exception as e:
+        print(f"Error queueing verification email: {e}")
+        return False
+
+
+async def mail_send(code: str, email: str):
     """
 
         Sends a verification code to the user's email (synchronous).

@@ -50,22 +50,31 @@ from core.r2_config import BASE_URL
 from core.enumeration import ImageDirectories
 from models.auth.user import User
 from models.auth.profile_picture import ProfilePicture
+from pydantic_schemas.pagination import pagination_meta
 
 PROFILE_IMAGE_BASE = f"{BASE_URL}/{ImageDirectories.PROFILE_DIR.value}"
 
 
-async def search_user(query: str, current_user, db):
+async def search_user(
+    query: str,
+    current_user,
+    db,
+    limit: int = 20,
+    offset: int = 0,
+):
     """
     Search users by their username or full name and include profile picture.
     """
     print(f"query: {query}")
 
-    rows = db.query(User, ProfilePicture).outerjoin(
+    db_query = db.query(User, ProfilePicture).outerjoin(
         ProfilePicture, ProfilePicture.user_id == User.id
     ).filter(
         (User.username.ilike(f"%{query}%")) | (User.name.ilike(f"%{query}%")),
         User.id != current_user
-    ).all()
+    )
+    total = db_query.count()
+    rows = db_query.offset(offset).limit(limit).all()
 
     print(rows)
 
@@ -83,11 +92,17 @@ async def search_user(query: str, current_user, db):
             "profilePicture": pic_url
         })
 
-    return results
+    return {
+        "items": results,
+        "pagination": pagination_meta(total=total, limit=limit, offset=offset),
+    }
 
 
-async def recommend_user(user_id, db):
+async def recommend_user(user_id, db, limit: int = 20, offset: int = 0):
     """
     Recommend users logic to be implemented.
     """
-    pass
+    return {
+        "items": [],
+        "pagination": pagination_meta(total=0, limit=limit, offset=offset),
+    }

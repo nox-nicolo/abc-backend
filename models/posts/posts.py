@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, ForeignKey, Integer, String, Text, Boolean, Enum, TIMESTAMP, VARCHAR, Float
+from sqlalchemy import Column, ForeignKey, Integer, String, Text, Boolean, Enum, TIMESTAMP, VARCHAR, Float, Index
 from sqlalchemy.orm import relationship
 from core.enumeration import PostVisibility, PostStatus, MediaType, MediaState, ReportReason, ReportStatus
 from models.base import Base  
@@ -74,6 +74,12 @@ class Post(Base):
     bookmarks = relationship("PostBoorkmark", back_populates="post", cascade="all, delete-orphan")
     settings = relationship("PostSettings", back_populates="post", uselist=False, cascade="all, delete-orphan")
 
+    __table_args__ = (
+        Index("ix_posts_status_created", "status", "created_at"),
+        Index("ix_posts_user_created", "user_id", "created_at"),
+        Index("ix_posts_sub_service_created", "sub_service_id", "created_at"),
+    )
+
     @property
     def sub_service_name(self):
         return self.sub_service.name if self.sub_service else None
@@ -101,6 +107,10 @@ class MediaData(Base):
     # Relationship with Post
     post = relationship("Post", back_populates="media_items", uselist=False)
 
+    __table_args__ = (
+        Index("ix_media_data_post_created", "post_id", "created_at"),
+    )
+
     def __repr__(self):
         return f"<MediaData id={self.id}, post_id={self.post_id}, media_url={self.media_url}>"
 
@@ -122,6 +132,11 @@ class PostBoorkmark(Base):
     # Relationships
     user = relationship("User", back_populates = "bookmarks")
     post = relationship("Post", back_populates = 'bookmarks')
+
+    __table_args__ = (
+        Index("ix_post_bookmarks_user_created", "user_id", "created_at"),
+        Index("ix_post_bookmarks_user_post", "user_id", "post_id"),
+    )
 
     def __repr__(self):
         return f"<PostBoorkmark id={self.id}, user_id={self.user_id}, post_id={self.post_id}>"
@@ -168,6 +183,11 @@ class PostMention(Base):
     post = relationship("Post", back_populates="post_mentions")  # Link back to Post
     mentioned_user = relationship("User", back_populates="mentions")  # Link back to User
 
+    __table_args__ = (
+        Index("ix_post_mentions_mentioned_created", "mentioned_user_id", "created_at"),
+        Index("ix_post_mentions_post_mentioned", "post_id", "mentioned_user_id"),
+    )
+
     def __repr__(self):
         return f"<PostMention id={self.id}, post_id={self.post_id}, mentioned_user_id={self.mentioned_user_id}>"
 
@@ -189,6 +209,11 @@ class PostHashtag(Base):
     # Relationships
     post = relationship("Post", back_populates="post_hashtags")  # Link back to Post
     hashtag = relationship("Hashtag", back_populates="post_hashtags")  # Link back to Hashtag
+
+    __table_args__ = (
+        Index("ix_post_hashtags_hashtag_created", "hashtag_id", "created_at"),
+        Index("ix_post_hashtags_post_hashtag", "post_id", "hashtag_id"),
+    )
 
     def __repr__(self):
         return f"<PostHashtag id={self.id}, post_id={self.post_id}, hashtag_id={self.hashtag_id}>"
@@ -240,6 +265,12 @@ class PostShare(Base):
         back_populates="received_shared_posts",
         foreign_keys=[user_id],
     )
+
+    __table_args__ = (
+        Index("ix_post_shares_post_created_user", "post_id", "share_user_id"),
+        Index("ix_post_shares_share_user", "share_user_id"),
+        Index("ix_post_shares_received_user", "user_id"),
+    )
     
     def __repr__(self):
         return f"<PostShare id={self.id}, post_id={self.post_id}, share_user_id={self.share_user_id}, user_id={self.user_id}>"
@@ -260,6 +291,11 @@ class PostView(Base):
 
     post = relationship("Post", back_populates="views")
     user = relationship("User", back_populates="views")
+
+    __table_args__ = (
+        Index("ix_post_views_post_viewed", "post_id", "viewed_at"),
+        Index("ix_post_views_user_viewed", "user_id", "viewed_at"),
+    )
     
     def __repr__(self):
         return f"<PostView id={self.id}, post_id={self.post_id}, user_id={self.user_id}, viewer_ip={self.viewer_ip}>"
@@ -280,6 +316,12 @@ class PostLike(Base):
 
     post = relationship("Post", back_populates="likes")
     user = relationship("User", back_populates="likes")
+
+    __table_args__ = (
+        Index("ix_post_likes_post_liked", "post_id", "liked"),
+        Index("ix_post_likes_user_created", "user_id", "created_at"),
+        Index("ix_post_likes_post_user", "post_id", "user_id"),
+    )
 
     def __repr__(self):
         return f"<PostLike id={self.id}, post_id={self.post_id}, user_id={self.user_id}, created_at={self.created_at}>"
@@ -314,6 +356,11 @@ class PostComment(Base):
         cascade="all, delete-orphan",
     )
 
+    __table_args__ = (
+        Index("ix_post_comments_post_parent_created", "post_id", "comment_id", "created_at"),
+        Index("ix_post_comments_user_created", "user_com", "created_at"),
+    )
+
     def __repr__(self):
         return f"<PostComment id={self.id}, post_id={self.post_id}, user_id={self.user_id}, content={self.content[:20]}...>"
 
@@ -336,6 +383,11 @@ class PostReport(Base):
 
     post = relationship("Post", back_populates="reports")
     user = relationship("User", back_populates="reports")
+
+    __table_args__ = (
+        Index("ix_post_reports_post_status", "post_id", "status"),
+        Index("ix_post_reports_user_created", "user_id", "created_at"),
+    )
     
     def __repr__(self):
         return f"<PostReport id={self.id}, post_id={self.post_id}, user_id={self.user_id}>"

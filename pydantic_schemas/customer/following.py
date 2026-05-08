@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 from typing import Optional, List
 
+from pydantic_schemas.pagination import PaginationMeta
+
 
 class FollowedSalonItem(BaseModel):
     salon_id: str
@@ -12,3 +14,4 @@ class FollowedSalonItem(BaseModel):
 class MyFollowingResponse(BaseModel):
     items: List[FollowedSalonItem]
     total: int
+    pagination: Optional[PaginationMeta] = None

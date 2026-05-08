@@ -15,7 +15,7 @@ from service.auth.JWT.JWT_token import (
     create_access_token,
     create_refresh_token,
 )
-from service.auth.send_code import mail_send
+from service.auth.send_code import enqueue_verification_email, mail_send
 
 
 # Generate a random 6-digit numeric code
@@ -47,7 +47,8 @@ async def create_verification(user: User, via: str, db: Session = Depends(get_db
     db.add(verification)
     db.commit()
 
-    await mail_send(code=verification_code, email=user.email)
+    if not enqueue_verification_email(code=verification_code, email=user.email):
+        await mail_send(code=verification_code, email=user.email)
 
 
 def verify_user(code: str, db: Session = Depends(get_db)):
@@ -201,6 +202,7 @@ async def code_expires(code: str, db: Session = Depends(get_db)):
 
     db.commit()
 
-    await mail_send(code=new_code, email=user.email)
+    if not enqueue_verification_email(code=new_code, email=user.email):
+        await mail_send(code=new_code, email=user.email)
 
     return {"message": "New Code sent to your mail"}

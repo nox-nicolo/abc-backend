@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional
+from pydantic_schemas.pagination import Page
 
 class EventCard(BaseModel):
     event_id: str
@@ -18,3 +19,7 @@ class EventCard(BaseModel):
     model_config = {
         "from_attributes": True
     }
+
+
+class EventPage(Page[EventCard]):
+    pass

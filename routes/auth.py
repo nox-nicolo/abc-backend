@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import or_
 
 from core.database import get_db
+from core.rate_limit import rate_limit
 from models.auth.refresh_token import RefreshToken
 from pydantic_schemas.auth.jwt_token import TokenData
 from pydantic_schemas.auth.me import MeResponseSchema
@@ -50,7 +51,7 @@ async def signup_user(user: UserCreate, db: Session = Depends(get_db)): # db is 
    
 
 # login user route
-@auth.post('/login')
+@auth.post('/login', dependencies=[Depends(rate_limit(bucket="auth:login", limit=8, window_seconds=60))])
 def login(user: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     """
         Login user
@@ -66,7 +67,7 @@ def login(user: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
     
     
 # verify route
-@auth.post('/verify')
+@auth.post('/verify', dependencies=[Depends(rate_limit(bucket="auth:verify", limit=10, window_seconds=60))])
 def verify_endpoint(verification: UserVerification, db: Session = Depends(get_db)):
     
     try:
@@ -80,7 +81,7 @@ def verify_endpoint(verification: UserVerification, db: Session = Depends(get_db
     
     
 # send code route to user via mail
-@auth.post('/code')
+@auth.post('/code', dependencies=[Depends(rate_limit(bucket="auth:code", limit=3, window_seconds=300))])
 async def send_code(verifcation: UserVerification, db: Session = Depends(get_db)):
     
     try:
