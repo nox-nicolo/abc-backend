@@ -1,36 +1,30 @@
-from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.middleware.cors import CORSMiddleware
-from alembic.config import Config
-from alembic import command
-import logging
-
 from core.observability import install_observability
 from routes import auth, booking, chat, crash_reports, notifications, posts, profile, search, service, setup_profile, users
 
-logger = logging.getLogger(__name__)
-
-def run_migrations():
-    try:
-        alembic_cfg = Config("alembic.ini")
-        command.upgrade(alembic_cfg, "head")
-        logger.info("Database migrations applied successfully.")
-    except Exception as e:
-        logger.error(f"Migration failed: {e}")
-        raise  # re-raise so Render knows the startup failed
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    run_migrations()
-    yield
-
-app = FastAPI(docs_url=None, lifespan=lifespan)
+app = FastAPI(docs_url=None)  # Disable default Swagger UI
 install_observability(app)
+
+# Mount static files for assets (user images, etc.)
+# app.mount("/assets", StaticFiles(directory="assets"), name="abc_files")
 
 # Mount static files for Swagger UI (downloaded locally)
 app.mount("/swagger", StaticFiles(directory="swagger_static"), name="swagger_files")
+
+
+# ----------------------------
+# CORS Middleware
+# ----------------------------
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 # ----------------------------
 # Routers
@@ -53,8 +47,11 @@ API_ROUTERS = (
 for router in API_ROUTERS:
     app.include_router(router, prefix=API_V1_PREFIX)
 
+# Temporary compatibility for older app builds and deep links.
+# Keep these out of OpenAPI so /api/v1 is the documented contract.
 for router in API_ROUTERS:
     app.include_router(router, include_in_schema=False)
+
 
 # ----------------------------
 # Swagger UI (Offline Version)
