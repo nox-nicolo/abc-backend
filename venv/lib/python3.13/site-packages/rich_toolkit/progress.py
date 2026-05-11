@@ -41,10 +41,9 @@ class Progress(Live, Element):
 
         self.logs: List[ProgressLine] = []
 
-        self.metadata = metadata
         self._cancelled = False
 
-        Element.__init__(self, style=style)
+        Element.__init__(self, style=style, metadata=metadata)
         super().__init__(console=console, refresh_per_second=8, transient=transient)
 
     # TODO: remove this once rich uses "Self"
@@ -52,6 +51,12 @@ class Progress(Live, Element):
         self.start(refresh=self._renderable is not None)
 
         return self
+
+    def __exit__(self, exc_type: type | None, *args: object) -> None:
+        if exc_type is KeyboardInterrupt:
+            self._cancelled = True
+
+        super().__exit__(exc_type, *args)
 
     def get_renderable(self) -> RenderableType:
         return self.style.render_element(self, done=not self._started)

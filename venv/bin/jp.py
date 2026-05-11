@@ -1,4 +1,4 @@
-#!/home/nico/AndroidStudioProjects/abc/backend/test_fast_api/venv/bin/python
+#!/home/ocin/Documents/Projects/abc/abc-backend/venv/bin/python3
 
 import sys
 import json

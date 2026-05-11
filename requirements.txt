@@ -12,6 +12,7 @@ fastapi_mail
 boto3
 resend
 sentry-sdk[fastapi]
+psycopg2-binary
 
 PyJWT
 python-decouple
