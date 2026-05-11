@@ -62,6 +62,22 @@ class Booking(Base):
     def customer_name(self):
         return self.customer.name if self.customer else None
 
+    @property
+    def has_review(self):
+        return self.review is not None
+
+    @property
+    def review_rating(self):
+        return self.review.rating if self.review else None
+
+    @property
+    def review_comment(self):
+        return self.review.comment if self.review else None
+
+    @property
+    def review_created_at(self):
+        return self.review.created_at if self.review else None
+
     __table_args__ = (
         Index("ix_bookings_customer_status_start", "customer_id", "status", "start_at"),
         Index("ix_bookings_salon_status_start", "salon_id", "status", "start_at"),

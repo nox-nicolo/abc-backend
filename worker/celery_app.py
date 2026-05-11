@@ -39,4 +39,8 @@ celery_app.conf.beat_schedule = {
         "task": "worker.tasks.refresh_top_salon_ranking",
         "schedule": crontab(minute="*/15"),
     },
+    "scan-rebooking-reminders-daily": {
+        "task": "worker.tasks.scan_rebooking_reminders",
+        "schedule": crontab(hour=6, minute=15),
+    },
 }

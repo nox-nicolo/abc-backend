@@ -1,6 +1,7 @@
 
 
 
+from datetime import date
 from typing import List, Optional
 from fastapi import HTTPException, APIRouter, File, Form, Query, UploadFile, status, Depends
 from fastapi.responses import JSONResponse
@@ -14,9 +15,10 @@ from pydantic_schemas.profile.salon import  SalonGalleryResponse, SalonProfileRe
 from pydantic_schemas.profile.salon_config_service import SalonServiceConfigIn, SalonServiceConfigOut
 from pydantic_schemas.profile.salon_stylists import SalonStylistCreate, SalonStylistListOut, SalonStylistOut, SalonStylistOutSimple, SalonStylistUpdate, UserSearchListOut
 from pydantic_schemas.profile.salon_view import SalonFollowersResponseSchema, SalonViewProfileResponseSchema
-from pydantic_schemas.profile.settings import AccountMediaResponse, SalonContactLocationResponse, SalonContactUpdateRequest, SalonProfileResponse, SalonProfileUpdateRequest, SalonWorkingHoursResponse, SalonWorkingHoursUpdateRequest
+from pydantic_schemas.profile.settings import AccountMediaResponse, SalonAvailabilityOverrideIn, SalonAvailabilityOverrideListResponse, SalonAvailabilityOverrideOut, SalonContactLocationResponse, SalonContactUpdateRequest, SalonProfileResponse, SalonProfileUpdateRequest, SalonWorkingHoursResponse, SalonWorkingHoursUpdateRequest
 from pydantic_schemas.profile.top_salon import TopSalonResponse
 from service.auth.JWT.oauth2 import get_current_user
+from service.auth.permissions import SalonPrincipal, require_salon_owner
 from service.profile.configure_service_salon import get_salon_services_for_config
 from service.profile.salon import profile_salon
 from service.profile.salon_config_service import create_salon_service, update_salon_service
@@ -25,6 +27,7 @@ from service.profile.salon_folow_unfollow import follow_salon, unfollow_salon
 from service.profile.salon_service_config import list_selectable_services
 from service.profile.salon_view import view_salon_profile
 from service.profile.settings.contact_location import update_salon_contact_
+from service.profile.settings.availability_calendar import delete_availability_override_, list_availability_overrides_, upsert_availability_override_
 from service.profile.settings.salon_gallery import manage_salon_gallery_
 from service.profile.settings.salon_profile import update_salon_profile_
 from service.profile.settings.salon_working_hours import update_salon_working_hours_
@@ -46,8 +49,11 @@ profile = APIRouter(
 # Get Salon Profle
 # -------------------------------------------------------------------
 @profile.get('/salon',  status_code=status.HTTP_200_OK)
-async def salon_profile(db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_user)):
-    user_id = current_user.user_id
+async def salon_profile(
+    db: Session = Depends(get_db),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
+):
+    user_id = salon_owner.user_id
     
     # Let FastAPI handle the response_model serialization
     # If profile_salon returns a dict, FastAPI will validate it against SalonProfileResponse
@@ -63,16 +69,12 @@ async def salon_activity_feed_owner(
     limit: int = Query(30, ge=1, le=50),
     cursor: str | None = Query(None),
     db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
     """Owner-only feed: resolves the caller's salon and returns full activity."""
-    salon = db.query(Salon).filter(Salon.user_id == current_user.user_id).first()
-    if not salon:
-        return {"items": [], "next_cursor": None}
-
     return await get_salon_activity(
-        salon_id=salon.id,
-        viewer_user_id=current_user.user_id,
+        salon_id=salon_owner.salon_id,
+        viewer_user_id=salon_owner.user_id,
         db=db,
         limit=limit,
         cursor=cursor,
@@ -112,7 +114,7 @@ def list_services_for_selection(
     limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
     """
     Page 1:
@@ -129,7 +131,7 @@ def list_services_for_selection(
     # NOTE: profile-only. Business logic goes into service layer.
     return list_selectable_services(
         db=db,
-        salon_id=current_user.user_id,
+        salon_id=salon_owner.user_id,
         q=q,
         include_archived=include_archived,
         limit=limit,
@@ -150,7 +152,7 @@ def list_services_for_selection(
 def create_salon_service_route(
     payload: SalonServiceConfigIn,
     db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
     """
     Configure a service for the first time (CREATE).
@@ -166,7 +168,7 @@ def create_salon_service_route(
     
     return create_salon_service(
         db=db,
-        salon=current_user.user_id,
+        salon=salon_owner.user_id,
         payload=payload,
     )
     
@@ -185,7 +187,7 @@ def update_salon_service_route(
     salon_service_price_id: str,
     payload: SalonServiceConfigIn,
     db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
     """
     Update an already configured salon service.
@@ -200,7 +202,7 @@ def update_salon_service_route(
     #
     return update_salon_service(
         db=db,
-        salon=current_user.user_id,
+        salon=salon_owner.user_id,
         salon_service_price_id=salon_service_price_id,
         payload=payload,
     )
@@ -220,7 +222,7 @@ def get_salon_service_config(
     service_id: str,
     sub_service_id: str,
     db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
     """
     Layer 2:
@@ -229,7 +231,7 @@ def get_salon_service_config(
     - Used by Create & Update UI
     """
 
-    salon_user_id = current_user.user_id
+    salon_user_id = salon_owner.user_id
 
     if not salon_user_id:
         raise HTTPException(
@@ -364,10 +366,10 @@ async def upload_account_media(
     profile_image: UploadFile | None = File(None),
     cover_ads: UploadFile | None = File(None),
     db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
     return await upload_account_media_(
-        user_id=current_user.user_id,
+        user_id=salon_owner.user_id,
         profile_image=profile_image,
         cover_ads=cover_ads,
         db=db,
@@ -387,10 +389,10 @@ async def upload_account_media(
 async def update_salon_profile(
     payload: SalonProfileUpdateRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
     return await update_salon_profile_(
-        user_id=current_user.user_id,
+        user_id=salon_owner.user_id,
         payload=payload,
         db=db,
     )
@@ -407,10 +409,11 @@ async def update_salon_profile(
 )
 async def update_salon_contact(
     payload: SalonContactUpdateRequest,
-    db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
     return await update_salon_contact_(
-        user_id=current_user.user_id,
+        user_id=salon_owner.user_id,
         payload=payload,
         db=db,
     )
@@ -427,11 +430,66 @@ async def update_salon_contact(
 async def update_working_hours(
     payload: SalonWorkingHoursUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
     return await update_salon_working_hours_(
-        user_id=current_user.user_id,
+        user_id=salon_owner.user_id,
         payload=payload,
+        db=db,
+    )
+
+# -------------------------------------------------------------------
+
+
+# -------------------------------------------------------------------
+# Authenticated: Salon Profile Settings - Availability Calendar
+# -------------------------------------------------------------------
+@profile.get(
+    "/availability-overrides",
+    response_model=SalonAvailabilityOverrideListResponse,
+)
+async def list_availability_overrides(
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    db: Session = Depends(get_db),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
+):
+    return await list_availability_overrides_(
+        user_id=salon_owner.user_id,
+        db=db,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
+@profile.put(
+    "/availability-overrides",
+    response_model=SalonAvailabilityOverrideOut,
+)
+async def upsert_availability_override(
+    payload: SalonAvailabilityOverrideIn,
+    db: Session = Depends(get_db),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
+):
+    return await upsert_availability_override_(
+        user_id=salon_owner.user_id,
+        payload=payload,
+        db=db,
+    )
+
+
+@profile.delete(
+    "/availability-overrides/{override_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_availability_override(
+    override_id: str,
+    db: Session = Depends(get_db),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
+):
+    await delete_availability_override_(
+        user_id=salon_owner.user_id,
+        override_id=override_id,
         db=db,
     )
 
@@ -451,11 +509,11 @@ async def update_gallery(
     # Optional IDs for deleting (sent as a comma-separated string or multiple form fields)
     delete_ids: List[str] = Form(default=[]),
     db: Session = Depends(get_db), 
-    current_user = Depends(get_current_user),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
     return await manage_salon_gallery_(
         db=db,
-        user_id=current_user.user_id,
+        user_id=salon_owner.user_id,
         files=files,
         delete_ids=delete_ids,
     )
@@ -474,9 +532,9 @@ async def update_gallery(
 def create_salon_stylist(
     payload: SalonStylistCreate,
     db: Session = Depends(get_db),
-    user_id: TokenData = Depends(get_current_user),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
-    return SalonStylistService(db, user_id=user_id.user_id).create(payload)
+    return SalonStylistService(db, user_id=salon_owner.user_id).create(payload)
 
 
 # -------------------------------------------------------------------
@@ -484,12 +542,12 @@ def create_salon_stylist(
 # -------------------------------------------------------------------
 @profile.get("/stylists", response_model=SalonStylistListOut)
 def list_salon_stylists(
-    user_id: TokenData = Depends(get_current_user),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
-    return SalonStylistService(db, user_id=user_id.user_id).list_for_salon(
+    return SalonStylistService(db, user_id=salon_owner.user_id).list_for_salon(
         # user_id=user_id.user_id,
         limit=limit,
         offset=offset,
@@ -503,9 +561,9 @@ def search_potential_stylists(
     q: str = Query(..., min_length=1),
     limit: int = Query(default=10, ge=1, le=50),
     db: Session = Depends(get_db),
-    user_data: TokenData = Depends(get_current_user),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
-    service = SalonStylistService(db, user_id=user_data.user_id)
+    service = SalonStylistService(db, user_id=salon_owner.user_id)
     results = service.search_users_to_add(query=q, limit=limit)
     
     return {
@@ -521,13 +579,13 @@ def search_potential_stylists(
 def get_one_salon_stylist(
     stylist_id: str,
     db: Session = Depends(get_db),
-    user_data: TokenData = Depends(get_current_user),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
     """
     Fetch details for a specific stylist.
     Used to populate the 'Edit Stylist' screen.
     """
-    service = SalonStylistService(db, user_id=user_data.user_id)
+    service = SalonStylistService(db, user_id=salon_owner.user_id)
     return service.get_stylist(stylist_id)
 
 
@@ -539,13 +597,13 @@ def update_salon_stylist(
     stylist_id: str,
     payload: SalonStylistUpdate,
     db: Session = Depends(get_db),
-    user_data: TokenData = Depends(get_current_user),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
     """
     Update stylist details (title, bio, active status).
     Only the salon owner can perform this.
     """
-    service = SalonStylistService(db, user_id=user_data.user_id)
+    service = SalonStylistService(db, user_id=salon_owner.user_id)
     return service.update_stylist(stylist_id, payload)
 
 
@@ -559,12 +617,12 @@ def update_salon_stylist(
 def remove_salon_stylist(
     stylist_id: str,
     db: Session = Depends(get_db),
-    user_data: TokenData = Depends(get_current_user),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
     """
     Removes a stylist from the owner's salon.
     'stylist_id' is the unique ID of the SalonStylist record.
     """
-    service = SalonStylistService(db, user_id=user_data.user_id)
+    service = SalonStylistService(db, user_id=salon_owner.user_id)
     service.remove_stylist(stylist_id)
     return None # 204 No Content doesn't return a body

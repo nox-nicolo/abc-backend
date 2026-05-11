@@ -7,12 +7,13 @@
 # from models.auth.user import User
 # from models.auth.profile_picture import ProfilePicture
 # from models.posts.posts import Post
+from models.booking.booking import ServiceReview
+# from models.saved import SavedSalon
 # from models.profile.salon import (
 #     Salon,
 #     SalonFollower,
 #     SalonBlock,
-#     Rate,
-#     SalonServicePrice,
+# #     SalonServicePrice,
 #     SalonStylist,
 #     StylistService,
 # )
@@ -335,11 +336,12 @@ from core.enumeration import ImageDirectories
 from models.auth.user import User
 from models.auth.profile_picture import ProfilePicture
 from models.posts.posts import Post
+from models.booking.booking import ServiceReview
+from models.saved import SavedSalon
 from models.profile.salon import (
     Salon,
     SalonFollower,
     SalonBlock,
-    Rate,
     SalonServicePrice,
     SalonStylist,
     StylistService,
@@ -379,6 +381,7 @@ async def view_salon_profile(
     notifications_enabled = False
     is_blocked = False
     is_owner = bool(viewer_id) and viewer_id == salon.user_id
+    is_saved = False
 
     if viewer_id:
         follow = (
@@ -399,6 +402,15 @@ async def view_salon_profile(
             .filter(
                 SalonBlock.salon_id == salon.id,
                 SalonBlock.user_id == viewer_id,
+            )
+            .first()
+            is not None
+        )
+        is_saved = (
+            db.query(SavedSalon)
+            .filter(
+                SavedSalon.salon_id == salon.id,
+                SavedSalon.user_id == viewer_id,
             )
             .first()
             is not None
@@ -449,14 +461,14 @@ async def view_salon_profile(
     )
 
     rating_avg = (
-        db.query(func.avg(Rate.value))
-        .filter(Rate.salon_id == salon.id)
+        db.query(func.avg(ServiceReview.rating))
+        .filter(ServiceReview.salon_id == salon.id)
         .scalar()
     )
 
     reviews_count = (
-        db.query(func.count(Rate.id))
-        .filter(Rate.salon_id == salon.id)
+        db.query(func.count(ServiceReview.id))
+        .filter(ServiceReview.salon_id == salon.id)
         .scalar()
         or 0
     )
@@ -602,6 +614,7 @@ async def view_salon_profile(
             "notifications_enabled": notifications_enabled,
             "is_blocked": is_blocked,
             "is_owner": is_owner,
+            "is_saved": is_saved,
         },
         "metrics": {
             "followers_count": followers_count,

@@ -20,6 +20,11 @@ class UserNotificationPreference(Base):
         index=True,
     )
 
+    allow_likes = Column(BOOLEAN, nullable=False, default=True)
+    allow_comments = Column(BOOLEAN, nullable=False, default=True)
+    allow_bookings = Column(BOOLEAN, nullable=False, default=True)
+    allow_promotions = Column(BOOLEAN, nullable=False, default=True)
+
     # Booking reminder preferences — apply to both salon owners and customers.
     allow_reminders = Column(BOOLEAN, nullable=False, default=True)
     reminder_lead_minutes = Column(INTEGER, nullable=False, default=30)

@@ -10,10 +10,14 @@ import models.auth.refresh_token  # noqa: F401
 import models.auth.user  # noqa: F401
 import models.auth.verification  # noqa: F401
 import models.booking.booking  # noqa: F401
+import models.chat  # noqa: F401
 import models.notifications.notification  # noqa: F401
+import models.notifications.device_token  # noqa: F401
+import models.mute  # noqa: F401
 import models.posts.posts  # noqa: F401
 import models.profile.notification_preferences  # noqa: F401
 import models.profile.salon  # noqa: F401
 import models.profile.user  # noqa: F401
+import models.saved  # noqa: F401
 import models.search.search  # noqa: F401
 import models.services.service  # noqa: F401

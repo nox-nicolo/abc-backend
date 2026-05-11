@@ -1,5 +1,6 @@
-from datetime import datetime, timezone, timedelta
+from datetime import date as DateType, datetime, time, timezone, timedelta
 from typing import List, Optional
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session, joinedload
@@ -7,7 +8,7 @@ from sqlalchemy import and_, func
 
 from core.enumeration import BookingStatus, ImageURL
 from models.booking.booking import Booking
-from models.profile.salon import Salon, SalonLocation, SalonServicePrice
+from models.profile.salon import Salon, SalonAvailabilityOverride, SalonLocation, SalonServicePrice, SalonWorkingHour
 from models.auth.user import User
 
 from models.booking.booking import ServiceReview
@@ -22,10 +23,18 @@ from pydantic_schemas.pagination import pagination_meta
 
 from pydantic_schemas.booking.choose_salon import SalonOfferForBooking
 from service.booking.helper import _auto_no_show, _now
+from models.profile.notification_preferences import UserNotificationPreference
+from service.chat import create_booking_chat_event, create_booking_confirmed_chat_event
+from service.notification.booking_ai import (
+    BookingNotificationContext,
+    booking_link,
+    generate_booking_confirmation_message,
+)
 from service.notification.notification import create_notification
 
 
 salon_url = ImageURL.SALON_COVER_URL.value
+SALON_TIMEZONE = ZoneInfo("Africa/Dar_es_Salaam")
 
 
 # ---------------------------------------------------------
@@ -76,6 +85,13 @@ async def create_booking_service(
 
     end_at = payload.start_at + timedelta(minutes=offering.duration_minutes)
 
+    _ensure_within_availability(
+        db=db,
+        salon_id=offering.salon_id,
+        start_at=payload.start_at,
+        end_at=end_at,
+    )
+
     capacity = offering.concurrent_capacity or 1
     if _has_overlap(db, offering.id, payload.start_at, end_at, capacity):
         raise HTTPException(
@@ -120,6 +136,8 @@ async def create_booking_service(
             commit=False,
         )
 
+    create_booking_chat_event(db=db, booking=booking, commit=False)
+
     db.commit()
     db.refresh(booking)
 
@@ -140,7 +158,11 @@ async def get_user_bookings_service(
     offset: int,
 ) -> dict:
 
-    query = db.query(Booking).filter(Booking.customer_id == user_id)
+    query = (
+        db.query(Booking)
+        .options(joinedload(Booking.review))
+        .filter(Booking.customer_id == user_id)
+    )
 
     if status:
         query = query.filter(Booking.status == status)
@@ -181,7 +203,7 @@ async def get_booking_service(
 
     booking = (
         db.query(Booking)
-        .options(joinedload(Booking.salon))
+        .options(joinedload(Booking.salon), joinedload(Booking.review))
         .filter(Booking.id == booking_id)
         .first()
     )
@@ -215,7 +237,12 @@ async def cancel_booking_service(
     payload: BookingCancel,
 ) -> Booking:
 
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    booking = (
+        db.query(Booking)
+        .options(joinedload(Booking.review))
+        .filter(Booking.id == booking_id)
+        .first()
+    )
     if not booking:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
@@ -345,7 +372,8 @@ async def confirm_booking_service(
 ) -> Booking:
 
     booking = db.query(Booking).options(
-        joinedload(Booking.customer) 
+        joinedload(Booking.customer),
+        joinedload(Booking.salon),
     ).filter(Booking.id == booking_id).first()
     if not booking:
         raise HTTPException(
@@ -368,12 +396,40 @@ async def confirm_booking_service(
     booking.status = BookingStatus.CONFIRMED
     booking.confirmed_at = _now()
 
+    pref = (
+        db.query(UserNotificationPreference)
+        .filter(UserNotificationPreference.user_id == booking.customer_id)
+        .first()
+    )
+    reminder_minutes = pref.reminder_lead_minutes if pref else 30
+    local_start = booking.start_at.astimezone(timezone(timedelta(hours=3)))
+    confirmation = generate_booking_confirmation_message(
+        BookingNotificationContext(
+            customer_name=booking.customer.name if booking.customer else "there",
+            service_type=booking.service_name_snapshot or "your service",
+            salon_name=booking.salon.title if booking.salon else "the salon",
+            booking_date=local_start.strftime("%A %d %b"),
+            booking_time=local_start.strftime("%H:%M"),
+            booking_link=booking_link(booking.id),
+        ),
+        reminder_lead_minutes=reminder_minutes,
+    )
+    confirmation_message = confirmation["message"]
+
     create_notification(
         db=db,
         recipient_id=booking.customer_id,
         actor_id=user_id,
         type="booking_confirmed",
         booking_id=booking.id,
+        message=confirmation_message,
+        commit=False,
+    )
+    create_booking_confirmed_chat_event(
+        db=db,
+        booking=booking,
+        message=confirmation_message,
+        salon_user_id=user_id,
         commit=False,
     )
 
@@ -494,6 +550,157 @@ async def complete_booking_service(
     return booking
 
 
+async def get_availability_slots_service(
+    *,
+    db: Session,
+    salon_service_price_id: str,
+    start_date: DateType | None = None,
+    days: int = 14,
+) -> dict:
+    offering = (
+        db.query(SalonServicePrice)
+        .filter(SalonServicePrice.id == salon_service_price_id)
+        .first()
+    )
+    if not offering:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Service offering not found")
+    if offering.duration_minutes is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Service duration not configured")
+
+    days = max(1, min(days, 31))
+    today = datetime.now(SALON_TIMEZONE).date()
+    first_day = start_date or today
+    if first_day < today:
+        first_day = today
+
+    items = []
+    duration = timedelta(minutes=offering.duration_minutes)
+    capacity = offering.concurrent_capacity or 1
+    now_utc = _now()
+
+    for offset in range(days):
+        day = first_day + timedelta(days=offset)
+        is_open, open_time, close_time, reason = _effective_hours_for_date(
+            db=db,
+            salon_id=offering.salon_id,
+            day=day,
+        )
+        slots = []
+        if is_open and open_time and close_time:
+            cursor = datetime.combine(day, open_time, tzinfo=SALON_TIMEZONE)
+            close_at = datetime.combine(day, close_time, tzinfo=SALON_TIMEZONE)
+            while cursor + duration <= close_at:
+                start_utc = cursor.astimezone(timezone.utc)
+                end_utc = (cursor + duration).astimezone(timezone.utc)
+                if start_utc > now_utc:
+                    overlapping = _overlap_count(
+                        db,
+                        offering.id,
+                        start_utc,
+                        end_utc,
+                    )
+                    remaining = capacity - overlapping
+                    if remaining > 0:
+                        slots.append(
+                            {
+                                "start_at": start_utc,
+                                "end_at": end_utc,
+                                "remaining_capacity": remaining,
+                            }
+                        )
+                cursor += timedelta(minutes=30)
+
+        items.append(
+            {
+                "date": day,
+                "is_open": bool(is_open),
+                "reason": reason,
+                "slots": slots,
+            }
+        )
+
+    return {"items": items}
+
+
+def _effective_hours_for_date(
+    *,
+    db: Session,
+    salon_id: str,
+    day: DateType,
+) -> tuple[bool, time | None, time | None, str | None]:
+    override = (
+        db.query(SalonAvailabilityOverride)
+        .filter(
+            SalonAvailabilityOverride.salon_id == salon_id,
+            SalonAvailabilityOverride.date == day,
+        )
+        .first()
+    )
+    if override:
+        if override.is_closed:
+            return False, None, None, override.reason
+        return True, override.open_time, override.close_time, override.reason
+
+    hours = (
+        db.query(SalonWorkingHour)
+        .filter(
+            SalonWorkingHour.salon_id == salon_id,
+            SalonWorkingHour.day_of_week == day.weekday(),
+        )
+        .first()
+    )
+    if not hours or not hours.is_open:
+        return False, None, None, None
+    return True, hours.open_time, hours.close_time, None
+
+
+def _ensure_within_availability(
+    *,
+    db: Session,
+    salon_id: str,
+    start_at: datetime,
+    end_at: datetime,
+) -> None:
+    local_start = start_at.astimezone(SALON_TIMEZONE)
+    local_end = end_at.astimezone(SALON_TIMEZONE)
+    if local_start.date() != local_end.date():
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Selected time must finish on the same day",
+        )
+
+    is_open, open_time, close_time, _ = _effective_hours_for_date(
+        db=db,
+        salon_id=salon_id,
+        day=local_start.date(),
+    )
+    if not is_open or not open_time or not close_time:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Salon is closed at this time")
+
+    if local_start.time() < open_time or local_end.time() > close_time:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Selected time is outside salon availability",
+        )
+
+
+def _overlap_count(
+    db: Session,
+    salon_service_price_id: str,
+    start_at: datetime,
+    end_at: datetime,
+    exclude_booking_id: str = None,
+) -> int:
+    count_q = db.query(func.count(Booking.id)).filter(
+        Booking.salon_service_price_id == salon_service_price_id,
+        Booking.status.in_([BookingStatus.PENDING, BookingStatus.CONFIRMED]),
+        Booking.start_at < end_at,
+        Booking.end_at > start_at,
+    )
+    if exclude_booking_id:
+        count_q = count_q.filter(Booking.id != exclude_booking_id)
+    return count_q.scalar() or 0
+
 
 
 
@@ -507,15 +714,13 @@ def _has_overlap(
     exclude_booking_id: str = None,
 ) -> bool:
     """Return True when the number of overlapping bookings for this service slot meets or exceeds capacity."""
-    count_q = db.query(func.count(Booking.id)).filter(
-        Booking.salon_service_price_id == salon_service_price_id,
-        Booking.status.in_([BookingStatus.PENDING, BookingStatus.CONFIRMED]),
-        Booking.start_at < end_at,
-        Booking.end_at > start_at,
-    )
-    if exclude_booking_id:
-        count_q = count_q.filter(Booking.id != exclude_booking_id)
-    return count_q.scalar() >= capacity
+    return _overlap_count(
+        db,
+        salon_service_price_id,
+        start_at,
+        end_at,
+        exclude_booking_id,
+    ) >= capacity
 
 
 # ---------------------------------------------------------
@@ -549,6 +754,12 @@ async def reschedule_booking_service(
     new_end_at = payload.start_at + timedelta(minutes=booking.duration_minutes_snapshot)
 
     offering = db.query(SalonServicePrice).filter(SalonServicePrice.id == booking.salon_service_price_id).first()
+    _ensure_within_availability(
+        db=db,
+        salon_id=booking.salon_id,
+        start_at=payload.start_at,
+        end_at=new_end_at,
+    )
     capacity = (offering.concurrent_capacity or 1) if offering else 1
     if _has_overlap(db, booking.salon_service_price_id, payload.start_at, new_end_at, capacity, exclude_booking_id=booking_id):
         raise HTTPException(status.HTTP_409_CONFLICT, "This time slot is fully booked")

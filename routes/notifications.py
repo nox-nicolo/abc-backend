@@ -7,10 +7,17 @@ from core.database import get_db
 from pydantic_schemas.auth.jwt_token import TokenData
 from pydantic_schemas.notifications.notification import (
     NotificationListResponse,
+    SalonEventCampaignRequest,
+    SalonEventCampaignResponse,
+    SalonPromotionCampaignRequest,
+    SalonPromotionCampaignResponse,
     UnreadCountResponse,
 )
 from service.auth.JWT.oauth2 import get_current_user
+from service.auth.permissions import SalonPrincipal, require_salon_owner
 from service.notification.notification import (
+    create_salon_event_campaign,
+    create_salon_promotion_campaign,
     get_unread_count,
     list_notifications,
     mark_all_read,
@@ -42,6 +49,40 @@ def unread_count(
     db: Session = Depends(get_db),
 ):
     return get_unread_count(db=db, user_id=current_user.user_id)
+
+
+@notifications.post(
+    "/salon/event-campaign",
+    response_model=SalonEventCampaignResponse,
+    status_code=201,
+)
+def create_event_campaign(
+    payload: SalonEventCampaignRequest,
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
+    db: Session = Depends(get_db),
+):
+    return create_salon_event_campaign(
+        db=db,
+        owner_user_id=salon_owner.user_id,
+        payload=payload,
+    )
+
+
+@notifications.post(
+    "/salon/promotion-campaign",
+    response_model=SalonPromotionCampaignResponse,
+    status_code=201,
+)
+def create_promotion_campaign(
+    payload: SalonPromotionCampaignRequest,
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
+    db: Session = Depends(get_db),
+):
+    return create_salon_promotion_campaign(
+        db=db,
+        owner_user_id=salon_owner.user_id,
+        payload=payload,
+    )
 
 
 @notifications.post("/read", status_code=200)

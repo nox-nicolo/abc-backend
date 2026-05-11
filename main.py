@@ -3,7 +3,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.middleware.cors import CORSMiddleware
 from core.observability import install_observability
-from routes import auth, booking, notifications, posts, profile, search, service, setup_profile, users
+from routes import auth, booking, chat, crash_reports, notifications, posts, profile, search, service, setup_profile, users
 
 app = FastAPI(docs_url=None)  # Disable default Swagger UI
 install_observability(app)
@@ -29,15 +29,28 @@ app.mount("/swagger", StaticFiles(directory="swagger_static"), name="swagger_fil
 # ----------------------------
 # Routers
 # ----------------------------
-app.include_router(auth.auth)
-app.include_router(setup_profile.setup)
-app.include_router(service.service)
-app.include_router(posts.posts)
-app.include_router(users.users)
-app.include_router(profile.profile)
-app.include_router(search.search)
-app.include_router(booking.booking)
-app.include_router(notifications.notifications)
+API_V1_PREFIX = "/api/v1"
+API_ROUTERS = (
+    auth.auth,
+    setup_profile.setup,
+    service.service,
+    posts.posts,
+    users.users,
+    profile.profile,
+    search.search,
+    booking.booking,
+    notifications.notifications,
+    chat.chat,
+    crash_reports.crash_reports,
+)
+
+for router in API_ROUTERS:
+    app.include_router(router, prefix=API_V1_PREFIX)
+
+# Temporary compatibility for older app builds and deep links.
+# Keep these out of OpenAPI so /api/v1 is the documented contract.
+for router in API_ROUTERS:
+    app.include_router(router, include_in_schema=False)
 
 
 # ----------------------------

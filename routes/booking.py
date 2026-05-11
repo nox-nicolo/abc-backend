@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from datetime import date
 from typing import List, Optional
 
 from core.database import get_db
@@ -12,6 +13,7 @@ from pydantic_schemas.booking.booking import (
     BookingCreate,
     BookingResponse,
     BookingCancel,
+    AvailabilityResponse,
     BookingListItem,
     BookingListPage,
     BookingResponsePage,
@@ -22,7 +24,7 @@ from pydantic_schemas.booking.booking import (
 
 from pydantic_schemas.booking.choose_salon import SalonOfferListResponse
 from service.auth.JWT.oauth2 import get_current_user
-from service.booking.booking import cancel_booking_service, complete_booking_service, confirm_booking_service, create_booking_service, create_review_service, get_booking_service, get_salon_bookings_service, get_salons_for_style, get_user_bookings_service, reject_booking_service, reschedule_booking_service
+from service.booking.booking import cancel_booking_service, complete_booking_service, confirm_booking_service, create_booking_service, create_review_service, get_availability_slots_service, get_booking_service, get_salon_bookings_service, get_salons_for_style, get_user_bookings_service, reject_booking_service, reschedule_booking_service
 
 
 booking = APIRouter(
@@ -129,6 +131,24 @@ async def list_salons_for_style(
 
     return results
 
+
+@booking.get(
+    "/availability",
+    response_model=AvailabilityResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_booking_availability(
+    salon_service_price_id: str = Query(...),
+    start_date: date | None = Query(None),
+    days: int = Query(14, ge=1, le=31),
+    db: Session = Depends(get_db),
+):
+    return await get_availability_slots_service(
+        db=db,
+        salon_service_price_id=salon_service_price_id,
+        start_date=start_date,
+        days=days,
+    )
 
 
 # -------------------------------------------------------------------

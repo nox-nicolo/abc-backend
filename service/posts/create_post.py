@@ -37,26 +37,42 @@ async def create_post_(
     """
 
     # ---------------------------------------------------------
-    # Validate or resolve sub_service_id (category)
+    # Validate service context. Announcements are free-form posts
+    # and do not point at a salon service.
     # ---------------------------------------------------------
-    is_service = (
-        db.query(SubServices)
-        .filter(SubServices.id == post.category)
-        .first()
-    )
+    post_type = post.post_type or "service"
+    is_announcement = post_type == "announcement"
 
-    if not is_service:
-        # fallback to the "Other" subservice; if it doesn't exist, create it
+    if is_announcement:
+        if not (post.caption or "").strip() and not files:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Announcement posts need text or media.",
+            )
+        is_service = None
+    else:
+        if not post.category:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Service posts require a service category.",
+            )
+        if not files:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Service posts require at least one image.",
+            )
+
         is_service = (
             db.query(SubServices)
-            .filter(SubServices.name == "Other")
+            .filter(SubServices.id == post.category)
             .first()
         )
+
         if not is_service:
-            is_service = SubServices(name="Other")
-            db.add(is_service)
-            # ensure the new instance gets an id before using it later
-            db.flush()
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Service category not found.",
+            )
 
     # ---------------------------------------------------------
     # Create Post ID
@@ -71,7 +87,8 @@ async def create_post_(
         user_id=user_id,
         caption_text=post.caption,
         status=post.status,
-        sub_service_id=is_service.id,
+        post_type=post_type,
+        sub_service_id=is_service.id if is_service else None,
         # font=post.font  # <-- NEW FIELD 
     )
 

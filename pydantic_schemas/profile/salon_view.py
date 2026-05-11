@@ -25,6 +25,7 @@ class SalonViewerSchema(BaseModel):
     notifications_enabled: bool
     is_blocked: bool
     is_owner: bool = False
+    is_saved: bool = False
 
 
 class SalonMetricsSchema(BaseModel):

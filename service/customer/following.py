@@ -2,6 +2,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from core.enumeration import ImageDirectories
 from core.r2_config import BASE_URL
+from models.auth.user import User
+from models.profile.salon import Salon
 from models.profile.salon import SalonFollower
 from pydantic_schemas.pagination import pagination_meta
 from pydantic_schemas.customer.following import FollowedSalonItem, MyFollowingResponse
@@ -19,8 +21,8 @@ def get_my_following(
         db.query(SalonFollower)
         .options(
             joinedload(SalonFollower.salon)
-            .joinedload("user")
-            .joinedload("profile_picture")
+            .joinedload(Salon.user)
+            .joinedload(User.profile_picture)
         )
         .filter(SalonFollower.user_id == user_id)
     )

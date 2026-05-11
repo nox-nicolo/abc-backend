@@ -17,16 +17,13 @@ from models.profile.salon import Salon, SalonLocation
 from models.services.service import SubServices
 from pydantic_schemas.pagination import pagination_meta
 
-_profile_url = f"{BASE_URL}/{ImageDirectories.PROFILE_DIR.value}"
 _salon_url = f"{BASE_URL}/{ImageDirectories.SALON_COVER_DIR.value}"
 _minor_url = f"{BASE_URL}/{ImageDirectories.SERVICE_DIR.value}minor/"
 
 
-def _cover_from_row(display_ads, profile_file_name) -> str | None:
+def _cover_from_row(display_ads, profile_file_name=None) -> str | None:
     if display_ads and display_ads != "Not Set":
         return _salon_url + display_ads
-    if profile_file_name:
-        return _profile_url + profile_file_name
     return None
 
 
@@ -47,10 +44,13 @@ def get_nearby_salons(
     radius_km: float = 15.0,
     limit: int = 10,
     offset: int = 0,
+    current_user_id: str | None = None,
 ) -> dict:
-    delta = radius_km / 111.0
+    lat_delta = radius_km / 111.0
+    lng_degrees_per_km = max(abs(111.320 * cos(radians(lat))), 0.01)
+    lng_delta = radius_km / lng_degrees_per_km
 
-    rows = (
+    query = (
         db.query(
             Salon.id,
             Salon.title,
@@ -66,11 +66,15 @@ def get_nearby_salons(
         .filter(
             SalonLocation.latitude.isnot(None),
             SalonLocation.longitude.isnot(None),
-            SalonLocation.latitude.between(lat - delta, lat + delta),
-            SalonLocation.longitude.between(lng - delta, lng + delta),
+            SalonLocation.latitude.between(lat - lat_delta, lat + lat_delta),
+            SalonLocation.longitude.between(lng - lng_delta, lng + lng_delta),
         )
-        .all()
     )
+
+    if current_user_id is not None:
+        query = query.filter(Salon.user_id != current_user_id)
+
+    rows = query.all()
 
     results = []
     for row in rows:

@@ -59,6 +59,7 @@ async def create_post(
     settings_model = PostSettingsSchema(**settings_dict)
 
     payload = CreatePostPayload(
+        post_type=form.post_type,
         category=form.category,
         caption=form.caption,
         hashtags=form.hashtags,

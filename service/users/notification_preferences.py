@@ -44,8 +44,16 @@ def update_preferences(
             )
         pref.reminder_lead_minutes = payload.reminder_lead_minutes
 
-    if payload.allow_reminders is not None:
-        pref.allow_reminders = payload.allow_reminders
+    for field in (
+        "allow_likes",
+        "allow_comments",
+        "allow_bookings",
+        "allow_promotions",
+        "allow_reminders",
+    ):
+        value = getattr(payload, field)
+        if value is not None:
+            setattr(pref, field, value)
 
     db.commit()
     db.refresh(pref)

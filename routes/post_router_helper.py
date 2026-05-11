@@ -11,6 +11,7 @@ class FormPostData:
 
     def __init__(
         self,
+        post_type: str = Form("service"),
         category: Optional[str] = Form(None),
         caption: Optional[str] = Form(None),
         media_metadata: str = Form("[]"),
@@ -19,6 +20,7 @@ class FormPostData:
         status: str = Form(...),
         settings: str = Form(...),
     ):
+        self.post_type = post_type if post_type in {"service", "announcement"} else "service"
         self.category = category
         self.caption = caption
 

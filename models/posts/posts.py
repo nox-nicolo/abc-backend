@@ -51,6 +51,7 @@ class Post(Base):
     caption_text = Column(Text, nullable=True)
 
     status = Column(Enum(PostStatus), default=PostStatus.PUBLISHED, nullable=False)
+    post_type = Column(String(30), default="service", nullable=False, index=True)
     sub_service_id = Column(String(36), ForeignKey("sub_services.id"))
     created_at = Column(TIMESTAMP, default=datetime.now(timezone.utc), nullable=False)
     updated_at = Column(
@@ -78,6 +79,7 @@ class Post(Base):
         Index("ix_posts_status_created", "status", "created_at"),
         Index("ix_posts_user_created", "user_id", "created_at"),
         Index("ix_posts_sub_service_created", "sub_service_id", "created_at"),
+        Index("ix_posts_type_created", "post_type", "created_at"),
     )
 
     @property

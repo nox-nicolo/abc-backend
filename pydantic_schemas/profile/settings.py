@@ -1,5 +1,5 @@
-from datetime import time
-from pydantic import BaseModel, EmailStr, HttpUrl, model_validator
+from datetime import date, time
+from pydantic import BaseModel, ConfigDict, EmailStr, HttpUrl, model_validator
 from typing import List, Optional
 
 
@@ -78,6 +78,39 @@ class SalonWorkingHoursUpdateRequest(BaseModel):
 
 class SalonWorkingHoursResponse(BaseModel):
     working_days: List[WorkingDayRequest]
+
+
+class SalonAvailabilityOverrideIn(BaseModel):
+    date: date
+    is_closed: bool
+    open_time: Optional[time] = None
+    close_time: Optional[time] = None
+    reason: Optional[str] = Field(None, max_length=255)
+
+    @model_validator(mode='after')
+    def validate_override(self):
+        if self.is_closed:
+            return self
+        if not self.open_time or not self.close_time:
+            raise ValueError("Open and close times are required for special hours.")
+        if self.close_time <= self.open_time:
+            raise ValueError("Closing time must be after opening time.")
+        return self
+
+
+class SalonAvailabilityOverrideOut(BaseModel):
+    id: str
+    date: date
+    is_closed: bool
+    open_time: Optional[time] = None
+    close_time: Optional[time] = None
+    reason: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SalonAvailabilityOverrideListResponse(BaseModel):
+    items: List[SalonAvailabilityOverrideOut]
     
 
 

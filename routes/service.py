@@ -14,6 +14,7 @@ from pydantic_schemas.services.service import (
 )
 from pydantic_schemas.services.service_details import ServiceDetailsResponse
 from service.auth.JWT.oauth2 import get_current_user
+from service.auth.permissions import UserPrincipal, require_admin
 from service.services.event import get_featured_events
 from service.services.service_details import _get_service_details
 from service.services.services import _get_major, _get_minor, _minor_upload, all_services, major_upload
@@ -53,7 +54,7 @@ async def upload_major(
     description: str = Form(None), 
     img_upload: UploadFile = File(...), 
     db: Session = Depends(get_db), 
-    current_user: TokenData = Depends(get_current_user)
+    admin: UserPrincipal = Depends(require_admin)
 ):
     """
     Upload major service
@@ -163,7 +164,7 @@ async def upload_minor(
     description: str = Form(None),
     file_name: UploadFile = File(None),
     db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user) 
+    admin: UserPrincipal = Depends(require_admin)
 ):
     try:
         return await _minor_upload(

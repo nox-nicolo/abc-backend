@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime
 from pydantic import AliasChoices, BaseModel, Field, ConfigDict
-from typing import Optional
+from typing import List, Optional
 from core.enumeration import BookingStatus
 from pydantic_schemas.pagination import Page
 
@@ -47,6 +47,11 @@ class BookingResponse(BaseModel):
     note: Optional[str]
     
     cancel_reason: Optional[str] = None
+
+    has_review: bool = False
+    review_rating: Optional[int] = None
+    review_comment: Optional[str] = None
+    review_created_at: Optional[datetime] = None
 
     created_at: datetime
     updated_at: datetime
@@ -116,6 +121,11 @@ class BookingListItem(BaseModel):
     
     cancel_reason: Optional[str] = None
 
+    has_review: bool = False
+    review_rating: Optional[int] = None
+    review_comment: Optional[str] = None
+    review_created_at: Optional[datetime] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -125,3 +135,20 @@ class BookingListPage(Page[BookingListItem]):
 
 class BookingResponsePage(Page[BookingResponse]):
     pass
+
+
+class AvailabilitySlot(BaseModel):
+    start_at: datetime
+    end_at: datetime
+    remaining_capacity: int
+
+
+class AvailabilityDay(BaseModel):
+    date: date
+    is_open: bool
+    reason: Optional[str] = None
+    slots: List[AvailabilitySlot] = Field(default_factory=list)
+
+
+class AvailabilityResponse(BaseModel):
+    items: List[AvailabilityDay]

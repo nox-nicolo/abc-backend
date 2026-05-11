@@ -2,7 +2,7 @@
 # Create Post (FINAL CLEAN VERSION)
 # ----------------------------------------------------------------------------------
 
-from typing import List, Optional
+from typing import List, Optional, Literal
 from pydantic import BaseModel
 from core.enumeration import MediaType, MediaState, PostStatus, PostVisibility
 
@@ -34,6 +34,7 @@ class PostSettingsSchema(BaseModel):
 # CREATE POST REQUEST BODY
 # -----------------------
 class CreatePostPayload(BaseModel):
+    post_type: Literal["service", "announcement"] = "service"
     category: Optional[str]
     caption: Optional[str]
     hashtags: Optional[List[str]]

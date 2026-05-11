@@ -13,20 +13,32 @@ from models.auth.user import User
 from pydantic_schemas.auth.jwt_token import TokenData
 from pydantic_schemas.customer.following import MyFollowingResponse
 from pydantic_schemas.customer.profile import CustomerProfileResponse, CustomerProfileUpdate
+from pydantic_schemas.mute import MuteListResponse, MuteResponse, MuteTargetType
 from pydantic_schemas.profile.notification_preferences import (
     NotificationPreferenceResponse,
     NotificationPreferenceUpdate,
 )
 from pydantic_schemas.users.user_select_service import UserSelectServicesResponse
+from pydantic_schemas.users.device_token import DeviceTokenListResponse, DeviceTokenResponse, DeviceTokenUpsert
 from service.auth.JWT.oauth2 import get_current_user
 from service.customer.following import get_my_following
 from service.customer.profile import get_customer_profile_, update_customer_profile_
 from service.search.users import recommend_user, search_user
+from service.users.mutes import list_mutes, mute_target, unmute_target
+from service.users.device_tokens import deactivate_device_token, list_device_tokens, upsert_device_token
 from service.users.notification_preferences import (
     get_preferences as get_notification_preferences_,
     update_preferences as update_notification_preferences_,
 )
 from service.users.user_select_services import user_select_services_
+from service.users.saved import (
+    list_saved_salons,
+    list_saved_services,
+    list_saved_styles,
+    toggle_saved_salon,
+    toggle_saved_service,
+    toggle_saved_style,
+)
 
 
 users = APIRouter(
@@ -88,6 +100,136 @@ async def get_my_following_list(
         return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
     except Exception as e:
         return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": str(e)})
+
+
+
+
+# ---------------------------------------------------
+# Device tokens for push notifications
+# ---------------------------------------------------
+
+@users.get("/me/device-tokens", response_model=DeviceTokenListResponse)
+def get_my_device_tokens(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return list_device_tokens(db=db, user_id=current_user.user_id)
+
+
+@users.put("/me/device-tokens", response_model=DeviceTokenResponse, status_code=200)
+def register_my_device_token(
+    payload: DeviceTokenUpsert,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return upsert_device_token(db=db, user_id=current_user.user_id, payload=payload)
+
+
+@users.delete("/me/device-tokens/{device_id}", status_code=200)
+def delete_my_device_token(
+    device_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return deactivate_device_token(db=db, user_id=current_user.user_id, device_id=device_id)
+
+
+# ---------------------------------------------------
+# Mute controls
+# ---------------------------------------------------
+
+@users.get("/me/mutes", response_model=MuteListResponse)
+def get_my_mutes(
+    target_type: MuteTargetType | None = Query(None),
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return list_mutes(db=db, user_id=current_user.user_id, target_type=target_type)
+
+
+@users.post("/me/mutes/{target_type}/{target_id}", response_model=MuteResponse, status_code=200)
+def mute_target_route(
+    target_type: MuteTargetType,
+    target_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return mute_target(
+        db=db,
+        user_id=current_user.user_id,
+        target_type=target_type,
+        target_id=target_id,
+    )
+
+
+@users.delete("/me/mutes/{target_type}/{target_id}", status_code=200)
+def unmute_target_route(
+    target_type: MuteTargetType,
+    target_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return unmute_target(
+        db=db,
+        user_id=current_user.user_id,
+        target_type=target_type,
+        target_id=target_id,
+    )
+
+
+# ---------------------------------------------------
+# Saved items
+# ---------------------------------------------------
+
+@users.get("/me/saved/salons")
+def get_my_saved_salons(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return list_saved_salons(user_id=current_user.user_id, db=db)
+
+
+@users.post("/me/saved/salons/{salon_id}", status_code=200)
+def save_or_unsave_salon(
+    salon_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return toggle_saved_salon(user_id=current_user.user_id, salon_id=salon_id, db=db)
+
+
+@users.get("/me/saved/services")
+def get_my_saved_services(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return list_saved_services(user_id=current_user.user_id, db=db)
+
+
+@users.post("/me/saved/services/{service_id}", status_code=200)
+def save_or_unsave_service(
+    service_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return toggle_saved_service(user_id=current_user.user_id, service_id=service_id, db=db)
+
+
+@users.get("/me/saved/styles")
+def get_my_saved_styles(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return list_saved_styles(user_id=current_user.user_id, db=db)
+
+
+@users.post("/me/saved/styles/{style_id}", status_code=200)
+def save_or_unsave_style(
+    style_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return toggle_saved_style(user_id=current_user.user_id, style_id=style_id, db=db)
 
 
 # ---------------------------------------------------

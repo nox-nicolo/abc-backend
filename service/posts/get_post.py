@@ -300,6 +300,7 @@ def _build_posts_response(
         items.append(
             {
                 "id": post.id,
+                "post_type": post.post_type or "service",
                 "author": {
                     "user_id": author.id,
                     "username": author.username,
@@ -457,6 +458,7 @@ async def get_post__(
 
     return {
         "id": post.id,
+        "post_type": post.post_type or "service",
         "author": {
             "user_id": author.id,
             "username": author.username,
@@ -517,6 +519,7 @@ def _map_post_to_post_response_schema(raw: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "id": raw["id"],
+        "post_type": raw.get("post_type", "service"),
 
         "author": {
             "id": author["user_id"],

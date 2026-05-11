@@ -65,6 +65,7 @@ class ViewerStateSchema(BaseModel):
 
 class PostResponseSchema(BaseModel):
     id: str
+    post_type: Literal["service", "announcement"] = "service"
     author: SalonSchema
 
     description: Optional[str] = None

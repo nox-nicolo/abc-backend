@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 import uuid
-from sqlalchemy import BOOLEAN, FLOAT, TIME, Column, Enum, ForeignKey, Index, String, DateTime, INTEGER, UniqueConstraint, CheckConstraint
+from sqlalchemy import BOOLEAN, DATE, FLOAT, TIME, Column, Enum, ForeignKey, Index, String, DateTime, INTEGER, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm import relationship
 from core.enumeration import ServiceCreatedStatus
 from models.base import Base
@@ -47,6 +47,7 @@ class Salon(Base):
     salon_service_prices = relationship("SalonServicePrice", back_populates="salon", cascade="all, delete-orphan")
     bookings = relationship("Booking", back_populates="salon", cascade="all, delete-orphan")
     working_hours = relationship("SalonWorkingHour", back_populates="salon", cascade="all, delete-orphan",)
+    availability_overrides = relationship("SalonAvailabilityOverride", back_populates="salon", cascade="all, delete-orphan",)
     location = relationship("SalonLocation", back_populates="salon", cascade="all, delete-orphan", uselist=False,)   # one-to-one
     stylists = relationship("SalonStylist", back_populates="salon", cascade="all, delete-orphan",)
     service_reviews = relationship("ServiceReview", back_populates="salon", cascade="all, delete-orphan",)
@@ -54,6 +55,7 @@ class Salon(Base):
     followers = relationship("SalonFollower", back_populates="salon", cascade="all, delete-orphan",)
     blocked_by = relationship("SalonBlock", back_populates="salon", cascade="all, delete-orphan",)
     reports = relationship("SalonReport", back_populates="salon", cascade="all, delete-orphan",)
+    saved_by = relationship("SavedSalon", back_populates="salon", cascade="all, delete-orphan",)
 
 
 #                               END
@@ -134,6 +136,7 @@ class SalonServicePrice(Base):
     benefits = relationship("SalonServiceBenefit", back_populates="salon_service_price", cascade="all, delete-orphan", order_by="SalonServiceBenefit.position")
     products = relationship("SalonServiceProduct", back_populates="salon_service_price", cascade="all, delete-orphan")
     reviews = relationship("ServiceReview", back_populates="salon_service_price", cascade="all, delete-orphan", )
+    saved_by = relationship("SavedService", back_populates="salon_service_price", cascade="all, delete-orphan")
 
     Index("ix_service_lookup", "salon_id", "service_id", "sub_service_id")
     
@@ -437,6 +440,39 @@ class SalonWorkingHour(Base):
     )
 
 
+
+
+
+class SalonAvailabilityOverride(Base):
+    __tablename__ = "salon_availability_overrides"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    salon_id = Column(
+        String(36),
+        ForeignKey("salons.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    date = Column(DATE, nullable=False, index=True)
+    is_closed = Column(BOOLEAN, default=False, nullable=False)
+    open_time = Column(TIME, nullable=True)
+    close_time = Column(TIME, nullable=True)
+    reason = Column(String(255), nullable=True)
+
+    created_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    salon = relationship("Salon", back_populates="availability_overrides")
+
+    __table_args__ = (
+        UniqueConstraint("salon_id", "date", name="uq_salon_availability_override_date"),
+        Index("ix_salon_availability_overrides_salon_date", "salon_id", "date"),
+    )
 
 
 

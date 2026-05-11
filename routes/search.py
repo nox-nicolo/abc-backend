@@ -62,8 +62,12 @@ async def global_search(
 
 @search.get("/nearby", summary="Salons near a given coordinate")
 def nearby_salons(
-    lat: float = Query(..., description="Latitude of the customer"),
-    lng: float = Query(..., description="Longitude of the customer"),
+    lat: float = Query(
+        ..., ge=-90, le=90, description="Latitude of the customer"
+    ),
+    lng: float = Query(
+        ..., ge=-180, le=180, description="Longitude of the customer"
+    ),
     radius_km: float = Query(15.0, ge=1, le=100),
     limit: int = Query(10, ge=1, le=30),
     offset: int = Query(0, ge=0),
@@ -77,6 +81,7 @@ def nearby_salons(
         radius_km=radius_km,
         limit=limit,
         offset=offset,
+        current_user_id=current_user.user_id,
     )
 
 

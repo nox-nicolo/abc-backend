@@ -19,6 +19,7 @@ class Services(Base):
     # relations here 
     sub_services = relationship('SubServices', back_populates='services', cascade="all, delete-orphan")
     salon_service_prices = relationship("SalonServicePrice",back_populates="service",cascade="all, delete-orphan",)
+    saved_by = relationship("SavedService", back_populates="service", cascade="all, delete-orphan")
 
     
     def __repr__(self):
@@ -41,6 +42,7 @@ class SubServices(Base):
     # Relation here
     services = relationship('Services', back_populates='sub_services')
     salon_service_prices = relationship("SalonServicePrice", back_populates="sub_service")
+    saved_by = relationship("SavedService", back_populates="sub_service", cascade="all, delete-orphan")
 
     
     posts = relationship("Post", back_populates="sub_service")
