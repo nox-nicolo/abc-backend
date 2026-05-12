@@ -1,0 +1,2 @@
+WEB_CONCURRENCY = 1
+WEB_CONCURRENCY = --config gunicorn.conf.py

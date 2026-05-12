@@ -11,25 +11,18 @@ ACCESS_KEY = os.getenv("R2_ACCESS_KEY")
 SECRET_KEY = os.getenv("R2_SECRET_KEY")
 BASE_URL = os.getenv("BASE_URL")
 
-print("R2_ENDPOINT =", repr(R2_ENDPOINT))
-print("BUCKET_NAME =", repr(BUCKET_NAME))
-print("BASE_URL =", repr(BASE_URL))
-print("ACCESS_KEY_LEN =", len(ACCESS_KEY) if ACCESS_KEY else None)
-
 s3 = boto3.client(
     "s3",
     endpoint_url=R2_ENDPOINT,
     aws_access_key_id=ACCESS_KEY,
     aws_secret_access_key=SECRET_KEY,
-    config=Config(signature_version="s3v4"),
+    config=Config(
+        signature_version="s3v4",
+        connect_timeout=5,
+        read_timeout=15,
+    ),
     region_name="auto",
 )
-
-try:
-    s3.head_bucket(Bucket=BUCKET_NAME)
-    print("head_bucket OK")
-except Exception as e:
-    print("head_bucket failed:", str(e))
 
 
 def upload_file(file, path: str, content_type: str | None = None):

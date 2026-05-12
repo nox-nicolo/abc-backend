@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,12 +8,13 @@ from routes import auth, booking, chat, crash_reports, notifications, posts, pro
 
 app = FastAPI(docs_url=None)  # Disable default Swagger UI
 install_observability(app)
+BASE_DIR = Path(__file__).resolve().parent
 
 # Mount static files for assets (user images, etc.)
 # app.mount("/assets", StaticFiles(directory="assets"), name="abc_files")
 
 # Mount static files for Swagger UI (downloaded locally)
-app.mount("/swagger", StaticFiles(directory="swagger_static"), name="swagger_files")
+app.mount("/swagger", StaticFiles(directory=BASE_DIR / "swagger_static"), name="swagger_files")
 
 
 # ----------------------------
