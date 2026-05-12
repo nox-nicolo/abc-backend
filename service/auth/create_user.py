@@ -2,6 +2,7 @@
 import random
 import string
 import uuid
+import re
 from sqlalchemy.orm import Session
 from fastapi import Depends, HTTPException, status
 from core.database import get_db
@@ -12,6 +13,12 @@ from models.profile.salon import Salon
 from pydantic_schemas.auth.user_create import UserCreate
 from service.auth.profile_pictuer import create_profile_picture
 from service.auth.verify_user import create_verification
+
+
+def _username_from_name(name: str) -> str:
+    username = re.sub(r"[^a-z0-9_]+", "_", name.strip().lower())
+    username = re.sub(r"_+", "_", username).strip("_")
+    return username or "admin"
 
 
 async def create_user(user: UserCreate, db: Session = Depends(get_db)): 
@@ -50,8 +57,10 @@ async def create_user(user: UserCreate, db: Session = Depends(get_db)):
             detail = "Phone number Taken!"
         )
 
+    admin_username = _username_from_name(user.name) if user.role == "admin" and not user.username else user.username
+
     if user.role == "admin":
-        existing_username = db.query(User).filter(User.username == user.username).first()
+        existing_username = db.query(User).filter(User.username == admin_username).first()
         if existing_username:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -68,7 +77,7 @@ async def create_user(user: UserCreate, db: Session = Depends(get_db)):
     
     # generate user name for now but user will change if she doesn't like it during setup profile
     generated_username = f"{(user.name).replace(" ", "_")[0:6]}_{random_str}"
-    username = user.username if user.role == "admin" else generated_username
+    username = admin_username if user.role == "admin" else generated_username
     
     
     

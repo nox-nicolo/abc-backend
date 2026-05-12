@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, field_validator
 
 
 class UserBase(BaseModel):  # Common fields
@@ -37,12 +37,6 @@ class UserBase(BaseModel):  # Common fields
             raise ValueError("Username cannot contain spaces")
 
         return username
-
-    @model_validator(mode="after")
-    def validate_admin_username(self):
-        if self.role == "admin" and not self.username:
-            raise ValueError("Username is required for admin accounts")
-        return self
 
 
 class UserCreate(UserBase):
