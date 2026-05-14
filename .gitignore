@@ -9,6 +9,9 @@ assets/**/*.gif
 .env
 .env.*
 !.env.example
+firebase-adminsdk*.json
+*firebase-adminsdk*.json
+service-account*.json
 
 # Python
 __pycache__/

@@ -383,7 +383,7 @@ async def view_salon_profile(
     is_owner = bool(viewer_id) and viewer_id == salon.user_id
     is_saved = False
 
-    if viewer_id:
+    if viewer_id and not is_owner:
         follow = (
             db.query(SalonFollower)
             .filter(
@@ -448,7 +448,10 @@ async def view_salon_profile(
 
     followers_count = (
         db.query(func.count(SalonFollower.id))
-        .filter(SalonFollower.salon_id == salon.id)
+        .filter(
+            SalonFollower.salon_id == salon.id,
+            SalonFollower.user_id != salon.user_id,
+        )
         .scalar()
         or 0
     )
@@ -638,12 +641,12 @@ async def view_salon_profile(
             "gallery": gallery_items,
         },
         "actions": {
-            "can_follow": not is_blocked,
-            "can_unfollow": is_following and not is_blocked,
+            "can_follow": not is_owner and not is_following and not is_blocked,
+            "can_unfollow": not is_owner and is_following and not is_blocked,
             "can_contact": not is_blocked,
             "can_share": True,
-            "can_report": not is_blocked,
-            "can_block": True,
+            "can_report": not is_owner and not is_blocked,
+            "can_block": not is_owner,
         },
         "services": {
             "categories": list(services_by_category.values())

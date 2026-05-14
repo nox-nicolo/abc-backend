@@ -105,24 +105,105 @@ def create_notification(
         notif.delivery_status = "sent"
         db.commit()
         db.refresh(notif)
-        send_push_to_user(
+        _send_notification_push(
             db=db,
-            user_id=recipient_id,
-            title="African Beauty",
-            body=message or _truncate(type.replace("_", " ")) or "New notification",
-            data={
-                "notification_id": notif.id,
-                "type": type,
-                "post_id": post_id or "",
-                "comment_id": comment_id or "",
-                "booking_id": booking_id or "",
-            },
+            notification=notif,
+            recipient_id=recipient_id,
+            actor_id=actor_id,
+            type=type,
+            post_id=post_id,
+            comment_id=comment_id,
+            booking_id=booking_id,
+            message=message,
+            commit_changes=True,
         )
     else:
         db.flush()
         notif.delivery_status = "sent"
         db.flush()
+        _send_notification_push(
+            db=db,
+            notification=notif,
+            recipient_id=recipient_id,
+            actor_id=actor_id,
+            type=type,
+            post_id=post_id,
+            comment_id=comment_id,
+            booking_id=booking_id,
+            message=message,
+            commit_changes=False,
+        )
     return notif
+
+
+def _send_notification_push(
+    *,
+    db: Session,
+    notification: Notification,
+    recipient_id: str,
+    actor_id: str,
+    type: str,
+    post_id: Optional[str],
+    comment_id: Optional[str],
+    booking_id: Optional[str],
+    message: Optional[str],
+    commit_changes: bool,
+) -> None:
+    title, body = _push_copy(
+        db=db,
+        actor_id=actor_id,
+        type=type,
+        message=message,
+    )
+    send_push_to_user(
+        db=db,
+        user_id=recipient_id,
+        title=title,
+        body=body,
+        data={
+            "notification_id": notification.id,
+            "type": type,
+            "post_id": post_id or "",
+            "comment_id": comment_id or "",
+            "booking_id": booking_id or "",
+        },
+        commit_changes=commit_changes,
+    )
+
+
+def _push_copy(
+    *,
+    db: Session,
+    actor_id: str,
+    type: str,
+    message: Optional[str],
+) -> tuple[str, str]:
+    actor = db.query(User).filter(User.id == actor_id).first()
+    actor_name = actor.username if actor and actor.username else "Someone"
+
+    if message:
+        if type.startswith("booking_"):
+            return "Booking update", _truncate(message) or "You have a booking update"
+        return "African Beauty", _truncate(message) or "You have a new notification"
+
+    copy = {
+        "like": ("New like", f"{actor_name} liked your post"),
+        "comment": ("New comment", f"{actor_name} commented on your post"),
+        "reply": ("New reply", f"{actor_name} replied to your comment"),
+        "message": ("New message", f"{actor_name} sent you a message"),
+        "booking_new": ("New booking", f"{actor_name} requested a booking"),
+        "booking_confirmed": ("Booking confirmed", "Your booking was confirmed"),
+        "booking_rejected": ("Booking declined", "Your booking was declined"),
+        "booking_cancelled": ("Booking cancelled", f"{actor_name} cancelled a booking"),
+        "booking_completed": ("Booking completed", "Your booking was completed"),
+        "booking_rescheduled": ("Booking rescheduled", f"{actor_name} rescheduled a booking"),
+        "booking_reminder_ai": ("Booking reminder", "You have an upcoming booking"),
+        "rebooking_reminder_ai": ("Time to book again", "A salon you visited is ready for you"),
+        "salon_event_marketing": ("Salon event", "A salon shared a new event"),
+        "event_based_booking": ("Booking idea", "A salon has a suggestion for your next visit"),
+        "salon_promotion_campaign": ("Salon offer", "A salon shared a new offer"),
+    }
+    return copy.get(type, ("African Beauty", "You have a new notification"))
 
 
 def _notification_allowed(*, db: Session, recipient_id: str, type: str) -> bool:

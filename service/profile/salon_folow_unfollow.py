@@ -1,5 +1,6 @@
 import uuid
-from models.profile.salon import SalonFollower
+from fastapi import HTTPException, status
+from models.profile.salon import Salon, SalonFollower
 from sqlalchemy.orm import Session
 
 
@@ -9,6 +10,19 @@ async def follow_salon(
     salon_id: str,
     user_id: str,
 ):
+    salon = db.query(Salon).filter(Salon.id == salon_id).first()
+    if not salon:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Salon not found",
+        )
+
+    if salon.user_id == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Salon owners cannot follow their own salon",
+        )
+
     exists = (
         db.query(SalonFollower)
         .filter(

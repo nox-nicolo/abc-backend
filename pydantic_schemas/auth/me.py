@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import Optional
 
 
 class MeResponseSchema(BaseModel):
@@ -6,4 +7,4 @@ class MeResponseSchema(BaseModel):
     username: str 
     phone: str 
     role: str 
-    profile_picture: str
+    profile_picture: Optional[str] = None

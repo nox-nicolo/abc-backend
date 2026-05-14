@@ -11,6 +11,7 @@ from models.booking.booking import Booking
 from models.chat import ChatConversation, ChatMessage
 from models.profile.salon import Salon
 from pydantic_schemas.chat import ChatSendRequest
+from service.notification.notification import create_notification
 
 
 PROFILE_URL = ImageURL.PROFILE_URL.value
@@ -128,6 +129,18 @@ def send_message(
     )
     db.commit()
     db.refresh(message)
+    recipient_id = (
+        conversation.salon_user_id
+        if user_id == conversation.customer_id
+        else conversation.customer_id
+    )
+    create_notification(
+        db=db,
+        recipient_id=recipient_id,
+        actor_id=user_id,
+        type="message",
+        message=payload.body.strip(),
+    )
     return message
 
 

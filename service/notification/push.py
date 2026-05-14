@@ -1,5 +1,6 @@
 import logging
 import os
+import json
 from functools import lru_cache
 from typing import Optional
 
@@ -13,7 +14,8 @@ logger = logging.getLogger("abc.push")
 @lru_cache(maxsize=1)
 def _firebase_app():
     credentials_path = os.getenv("FIREBASE_ADMIN_CREDENTIALS") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-    if not credentials_path:
+    credentials_json = os.getenv("FIREBASE_ADMIN_CREDENTIALS_JSON")
+    if not credentials_path and not credentials_json:
         logger.info("FCM disabled: FIREBASE_ADMIN_CREDENTIALS is not set")
         return None
 
@@ -27,7 +29,10 @@ def _firebase_app():
     try:
         if firebase_admin._apps:
             return firebase_admin.get_app()
-        cred = credentials.Certificate(credentials_path)
+        if credentials_json:
+            cred = credentials.Certificate(json.loads(credentials_json))
+        else:
+            cred = credentials.Certificate(credentials_path)
         return firebase_admin.initialize_app(cred)
     except Exception:
         logger.exception("FCM initialization failed")
@@ -41,6 +46,7 @@ def send_push_to_user(
     title: str,
     body: str,
     data: Optional[dict[str, str]] = None,
+    commit_changes: bool = True,
 ) -> int:
     app = _firebase_app()
     if app is None:
@@ -62,11 +68,30 @@ def send_push_to_user(
         .all()
     )
     sent = 0
+    push_data = {str(k): "" if v is None else str(v) for k, v in (data or {}).items()}
+    push_data.setdefault("title", title)
+    push_data.setdefault("body", body)
+
     for row in rows:
         message = messaging.Message(
             token=row.push_token,
             notification=messaging.Notification(title=title, body=body),
-            data=data or {},
+            data=push_data,
+            android=messaging.AndroidConfig(
+                priority="high",
+                notification=messaging.AndroidNotification(
+                    channel_id="abc_high_importance",
+                    sound="default",
+                    priority="high",
+                    default_sound=True,
+                    default_vibrate_timings=True,
+                ),
+            ),
+            apns=messaging.APNSConfig(
+                payload=messaging.APNSPayload(
+                    aps=messaging.Aps(sound="default", badge=1),
+                ),
+            ),
         )
         try:
             messaging.send(message, app=app)
@@ -77,6 +102,6 @@ def send_push_to_user(
                 row.is_active = False
                 db.flush()
             logger.warning("FCM send failed for device %s: %s", row.device_id, exc)
-    if sent or rows:
+    if commit_changes and (sent or rows):
         db.commit()
     return sent
