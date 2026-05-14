@@ -136,6 +136,62 @@ def create_notification(
     return notif
 
 
+def create_welcome_notification(
+    *,
+    db: Session,
+    user_id: str,
+    commit: bool = True,
+) -> Optional[Notification]:
+    existing = (
+        db.query(Notification)
+        .filter(
+            Notification.recipient_id == user_id,
+            Notification.actor_id == user_id,
+            Notification.type == "welcome",
+        )
+        .first()
+    )
+    if existing:
+        return existing
+
+    message = (
+        "Welcome to African Beauty. Your beauty community is ready: discover "
+        "salons, save favorites, book with confidence, and grow with the family."
+    )
+    notif = Notification(
+        recipient_id=user_id,
+        actor_id=user_id,
+        type="welcome",
+        message=message,
+        delivery_status="created",
+    )
+    db.add(notif)
+    db.flush()
+    notif.delivery_status = "sent"
+
+    if commit:
+        db.commit()
+        db.refresh(notif)
+    else:
+        db.flush()
+
+    send_push_to_user(
+        db=db,
+        user_id=user_id,
+        title="Welcome to African Beauty",
+        body=message,
+        data={
+            "notification_id": notif.id,
+            "type": "welcome",
+            "post_id": "",
+            "comment_id": "",
+            "booking_id": "",
+        },
+        commit_changes=commit,
+    )
+    return notif
+
+
 def _send_notification_push(
     *,
     db: Session,
@@ -182,11 +238,14 @@ def _push_copy(
     actor_name = actor.username if actor and actor.username else "Someone"
 
     if message:
+        if type == "welcome":
+            return "Welcome to African Beauty", _truncate(message) or "Welcome to the family"
         if type.startswith("booking_"):
             return "Booking update", _truncate(message) or "You have a booking update"
         return "African Beauty", _truncate(message) or "You have a new notification"
 
     copy = {
+        "welcome": ("Welcome to African Beauty", "Welcome to the family"),
         "like": ("New like", f"{actor_name} liked your post"),
         "comment": ("New comment", f"{actor_name} commented on your post"),
         "reply": ("New reply", f"{actor_name} replied to your comment"),
@@ -196,6 +255,7 @@ def _push_copy(
         "booking_rejected": ("Booking declined", "Your booking was declined"),
         "booking_cancelled": ("Booking cancelled", f"{actor_name} cancelled a booking"),
         "booking_completed": ("Booking completed", "Your booking was completed"),
+        "booking_no_show": ("Booking no-show", "A booking was marked as no-show"),
         "booking_rescheduled": ("Booking rescheduled", f"{actor_name} rescheduled a booking"),
         "booking_reminder_ai": ("Booking reminder", "You have an upcoming booking"),
         "rebooking_reminder_ai": ("Time to book again", "A salon you visited is ready for you"),

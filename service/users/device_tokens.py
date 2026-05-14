@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 
 from sqlalchemy.orm import Session
 
@@ -8,6 +9,8 @@ from pydantic_schemas.users.device_token import (
     DeviceTokenResponse,
     DeviceTokenUpsert,
 )
+
+logger = logging.getLogger("abc.push.tokens")
 
 
 def _to_response(row: UserDeviceToken) -> DeviceTokenResponse:
@@ -55,6 +58,12 @@ def upsert_device_token(*, db: Session, user_id: str, payload: DeviceTokenUpsert
 
     db.commit()
     db.refresh(row)
+    logger.info(
+        "FCM device token registered for user %s device %s platform %s",
+        user_id,
+        row.device_id,
+        row.platform,
+    )
     return _to_response(row)
 
 

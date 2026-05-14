@@ -332,16 +332,17 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
 from core.r2_config import BASE_URL
-from core.enumeration import ImageDirectories
+from core.enumeration import BookingStatus, ImageDirectories, ServiceCreatedStatus
 from models.auth.user import User
 from models.auth.profile_picture import ProfilePicture
 from models.posts.posts import Post
-from models.booking.booking import ServiceReview
+from models.booking.booking import Booking, ServiceReview
 from models.saved import SavedSalon
 from models.profile.salon import (
     Salon,
     SalonFollower,
     SalonBlock,
+    SalonReport,
     SalonServicePrice,
     SalonStylist,
     StylistService,
@@ -351,6 +352,149 @@ from models.profile.salon import (
 PROFILE_IMAGE_BASE = f"{BASE_URL}/{ImageDirectories.PROFILE_DIR.value}"
 COVER_IMAGE_BASE = f"{BASE_URL}/{ImageDirectories.SALON_COVER_DIR.value}"
 SALON_GALLERY_BASE = f"{BASE_URL}/{ImageDirectories.SALON_GALLERY_DIR.value}"
+
+
+def _salon_verification_state(
+    *,
+    db: Session,
+    salon: Salon,
+    owner: User,
+    contacts_map: dict,
+    location: dict | None,
+    service_prices: list[SalonServicePrice],
+    rating_avg,
+    reviews_count: int,
+    posts_count: int,
+) -> dict:
+    active_services = [
+        sp for sp in service_prices if sp.status == ServiceCreatedStatus.ACTIVE
+    ]
+    open_days = [
+        wh for wh in salon.working_hours if wh.is_open and wh.open_time and wh.close_time
+    ]
+    verified_contacts = [
+        c for c in salon.contacts if c.is_verified and c.type in {"phone", "email", "whatsapp"}
+    ]
+    completed_bookings_count = (
+        db.query(func.count(Booking.id))
+        .filter(
+            Booking.salon_id == salon.id,
+            Booking.status == BookingStatus.COMPLETED,
+        )
+        .scalar()
+        or 0
+    )
+    reports_count = (
+        db.query(func.count(SalonReport.id))
+        .filter(SalonReport.salon_id == salon.id)
+        .scalar()
+        or 0
+    )
+    salon_created_at = salon.created_at
+    if salon_created_at.tzinfo is None:
+        salon_created_at = salon_created_at.replace(tzinfo=timezone.utc)
+    account_age_days = (datetime.now(timezone.utc) - salon_created_at).days
+
+    criteria = [
+        (
+            bool(owner.is_verified),
+            "Owner email is verified",
+            "Verify the salon owner email",
+        ),
+        (
+            bool(salon.title and salon.description and salon.slogan),
+            "Salon profile is complete",
+            "Complete salon name, slogan, and description",
+        ),
+        (
+            account_age_days >= 30,
+            "Salon account has been active for 30+ days",
+            "Keep the salon active for at least 30 days",
+        ),
+        (
+            bool(salon.display_ads and salon.display_ads != "Not Set" and len(salon.galleries) >= 3),
+            "Salon has real cover and 3+ gallery photos",
+            "Add a cover photo and at least 3 gallery photos",
+        ),
+        (
+            bool(location and location.get("lat") is not None and location.get("lng") is not None),
+            "Salon location is set",
+            "Add a verified salon location",
+        ),
+        (
+            len(verified_contacts) >= 2,
+            "At least two contact methods are verified",
+            "Verify at least two contact methods",
+        ),
+        (
+            len(active_services) >= 3,
+            "Three or more active services are published",
+            "Publish at least 3 active services with pricing",
+        ),
+        (
+            len(open_days) >= 5,
+            "Working hours cover 5+ open days",
+            "Set working hours for at least 5 days",
+        ),
+        (
+            posts_count >= 3,
+            "Salon has posted 3+ examples of work",
+            "Publish at least 3 salon posts",
+        ),
+        (
+            completed_bookings_count >= 10,
+            "Salon has completed 10+ bookings",
+            "Complete at least 10 bookings",
+        ),
+        (
+            reviews_count >= 10 and float(rating_avg or 0) >= 4.5,
+            "Customer trust signals are excellent",
+            "Earn at least 10 reviews with a 4.5+ rating",
+        ),
+        (
+            reports_count == 0,
+            "Salon has a clean report history",
+            "Resolve trust and safety reports before verification",
+        ),
+    ]
+
+    earned = [ok for ok, _, _ in criteria if ok]
+    reasons = [reason for ok, reason, _ in criteria if ok]
+    missing = [missing for ok, _, missing in criteria if not ok]
+    is_verified = len(earned) == len(criteria)
+
+    return {
+        "is_verified": is_verified,
+        "verification_status": "verified" if is_verified else "earning",
+        "verification_label": "Verified Salon" if is_verified else "Earning verification",
+        "verification_reasons": reasons,
+        "verification_missing": missing,
+    }
+
+
+def _salon_premium_state(*, salon: Salon) -> dict:
+    now = datetime.now(timezone.utc)
+    sponsored = salon.sponsored
+    start_at = sponsored.start_at if sponsored else None
+    end_at = sponsored.end_at if sponsored else None
+    if start_at and start_at.tzinfo is None:
+        start_at = start_at.replace(tzinfo=timezone.utc)
+    if end_at and end_at.tzinfo is None:
+        end_at = end_at.replace(tzinfo=timezone.utc)
+    is_premium = bool(
+        sponsored
+        and sponsored.is_active
+        and start_at
+        and end_at
+        and start_at <= now
+        and end_at >= now
+    )
+    plan = sponsored.plan_type if is_premium else None
+    return {
+        "is_premium_member": is_premium,
+        "premium_plan": plan,
+        "premium_label": "Premium Member" if is_premium else None,
+    }
 
 
 async def view_salon_profile(
@@ -543,6 +687,18 @@ async def view_salon_profile(
         .all()
     )
 
+    verification = _salon_verification_state(
+        db=db,
+        salon=salon,
+        owner=owner,
+        contacts_map=contacts_map,
+        location=location,
+        service_prices=service_prices,
+        rating_avg=rating_avg,
+        reviews_count=reviews_count,
+        posts_count=posts_count,
+    )
+
     stylist_map = {}
 
     stylist_services = (
@@ -609,7 +765,8 @@ async def view_salon_profile(
             "description": salon.description,
             "profile_picture": profile_picture_url,
             "cover_image": cover_image_url,
-            "is_verified": owner.is_verified,
+            **verification,
+            **_salon_premium_state(salon=salon),
             "created_at": salon.created_at,
         },
         "viewer": {

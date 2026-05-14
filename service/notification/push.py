@@ -11,12 +11,25 @@ from models.notifications.device_token import UserDeviceToken
 logger = logging.getLogger("abc.push")
 
 
+def _credential_source() -> Optional[str]:
+    if os.getenv("FIREBASE_ADMIN_CREDENTIALS_JSON"):
+        return "FIREBASE_ADMIN_CREDENTIALS_JSON"
+    if os.getenv("FIREBASE_ADMIN_CREDENTIALS"):
+        return "FIREBASE_ADMIN_CREDENTIALS"
+    if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+        return "GOOGLE_APPLICATION_CREDENTIALS"
+    return None
+
+
 @lru_cache(maxsize=1)
 def _firebase_app():
     credentials_path = os.getenv("FIREBASE_ADMIN_CREDENTIALS") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
     credentials_json = os.getenv("FIREBASE_ADMIN_CREDENTIALS_JSON")
     if not credentials_path and not credentials_json:
-        logger.info("FCM disabled: FIREBASE_ADMIN_CREDENTIALS is not set")
+        logger.warning(
+            "FCM disabled: set FIREBASE_ADMIN_CREDENTIALS, "
+            "FIREBASE_ADMIN_CREDENTIALS_JSON, or GOOGLE_APPLICATION_CREDENTIALS"
+        )
         return None
 
     try:
@@ -39,6 +52,25 @@ def _firebase_app():
         return None
 
 
+def push_service_status(*, db: Session, user_id: str) -> dict:
+    active_tokens = (
+        db.query(UserDeviceToken)
+        .filter(
+            UserDeviceToken.user_id == user_id,
+            UserDeviceToken.is_active.is_(True),
+            UserDeviceToken.push_provider == "fcm",
+        )
+        .count()
+    )
+    configured = _credential_source() is not None
+    return {
+        "configured": configured,
+        "credential_source": _credential_source(),
+        "firebase_ready": _firebase_app() is not None if configured else False,
+        "active_fcm_tokens": active_tokens,
+    }
+
+
 def send_push_to_user(
     *,
     db: Session,
@@ -50,6 +82,7 @@ def send_push_to_user(
 ) -> int:
     app = _firebase_app()
     if app is None:
+        logger.warning("FCM send skipped for user %s: Firebase Admin is not ready", user_id)
         return 0
 
     try:
@@ -67,6 +100,10 @@ def send_push_to_user(
         )
         .all()
     )
+    if not rows:
+        logger.warning("FCM send skipped for user %s: no active FCM device tokens", user_id)
+        return 0
+
     sent = 0
     push_data = {str(k): "" if v is None else str(v) for k, v in (data or {}).items()}
     push_data.setdefault("title", title)
@@ -96,6 +133,7 @@ def send_push_to_user(
         try:
             messaging.send(message, app=app)
             sent += 1
+            logger.info("FCM sent to user %s device %s", user_id, row.device_id)
         except Exception as exc:
             code = getattr(exc, "code", "") or ""
             if code in {"registration-token-not-registered", "invalid-registration-token"}:
@@ -105,3 +143,15 @@ def send_push_to_user(
     if commit_changes and (sent or rows):
         db.commit()
     return sent
+
+
+def send_test_push_to_user(*, db: Session, user_id: str) -> dict:
+    status = push_service_status(db=db, user_id=user_id)
+    sent = send_push_to_user(
+        db=db,
+        user_id=user_id,
+        title="African Beauty test",
+        body="Push notifications are connected on this device.",
+        data={"type": "push_test"},
+    )
+    return {**status, "sent": sent}

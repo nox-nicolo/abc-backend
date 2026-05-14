@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, func
 
-from core.enumeration import BookingStatus, ImageURL
+from core.enumeration import BookingStatus, ImageURL, ServiceCreatedStatus
 from models.booking.booking import Booking
 from models.profile.salon import Salon, SalonAvailabilityOverride, SalonLocation, SalonServicePrice, SalonWorkingHour
 from models.auth.user import User
@@ -22,7 +22,7 @@ from pydantic_schemas.booking.booking import (
 from pydantic_schemas.pagination import pagination_meta
 
 from pydantic_schemas.booking.choose_salon import SalonOfferForBooking
-from service.booking.helper import _auto_no_show, _now
+from service.booking.helper import _auto_no_show, _is_future, _is_past_or_now, _now
 from models.profile.notification_preferences import UserNotificationPreference
 from service.chat import create_booking_chat_event, create_booking_confirmed_chat_event
 from service.notification.booking_ai import (
@@ -35,6 +35,51 @@ from service.notification.notification import create_notification
 
 salon_url = ImageURL.SALON_COVER_URL.value
 SALON_TIMEZONE = ZoneInfo("Africa/Dar_es_Salaam")
+MIN_BOOKING_LEAD_MINUTES = 15
+ACTIVE_BOOKING_STATUSES = (BookingStatus.PENDING, BookingStatus.CONFIRMED)
+BOOKING_TRANSITIONS = {
+    BookingStatus.PENDING: {
+        BookingStatus.CONFIRMED,
+        BookingStatus.REJECTED,
+        BookingStatus.CANCELLED,
+    },
+    BookingStatus.CONFIRMED: {
+        BookingStatus.COMPLETED,
+        BookingStatus.CANCELLED,
+        BookingStatus.NO_SHOW,
+    },
+}
+
+
+def _assert_transition(
+    booking: Booking,
+    target_status: BookingStatus,
+    message: str,
+) -> None:
+    allowed = BOOKING_TRANSITIONS.get(booking.status, set())
+    if target_status not in allowed:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, message)
+
+
+def _validate_bookable_offering(offering: SalonServicePrice) -> None:
+    if offering.status != ServiceCreatedStatus.ACTIVE:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Service offering is not active")
+    if offering.price_min is None or offering.price_min < 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Service price is not configured")
+    if offering.duration_minutes is None or offering.duration_minutes <= 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Service duration not configured")
+    if offering.concurrent_capacity is not None and offering.concurrent_capacity < 1:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Service capacity is not configured")
+
+
+def _validate_future_start(start_at: datetime, message: str) -> None:
+    if _is_past_or_now(start_at):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, message)
+    if start_at < _now() + timedelta(minutes=MIN_BOOKING_LEAD_MINUTES):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Booking must be at least {MIN_BOOKING_LEAD_MINUTES} minutes from now",
+        )
 
 
 # ---------------------------------------------------------
@@ -70,18 +115,14 @@ async def create_booking_service(
             status.HTTP_404_NOT_FOUND,
             "Service offering not found",
         )
-
-    if payload.start_at <= _now():
+    if offering.salon and offering.salon.user_id == user_id:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            "Booking start time must be in the future",
+            "Salon owners cannot book their own salon",
         )
 
-    if offering.price_min is None or offering.duration_minutes is None:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "Service price or duration not configured",
-        )
+    _validate_future_start(payload.start_at, "Booking start time must be in the future")
+    _validate_bookable_offering(offering)
 
     end_at = payload.start_at + timedelta(minutes=offering.duration_minutes)
 
@@ -255,16 +296,8 @@ async def cancel_booking_service(
             "Not your booking",
         )
 
-    if booking.status not in (
-        BookingStatus.PENDING,
-        BookingStatus.CONFIRMED,
-    ):
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "Booking cannot be cancelled",
-        )
-
-    if booking.start_at <= _now():
+    _assert_transition(booking, BookingStatus.CANCELLED, "Booking cannot be cancelled")
+    if _is_past_or_now(booking.start_at):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             "Too late to cancel booking",
@@ -387,14 +420,11 @@ async def confirm_booking_service(
             "Not your salon",
         )
 
-    if booking.status != BookingStatus.PENDING:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "Booking cannot be confirmed",
-        )
+    _assert_transition(booking, BookingStatus.CONFIRMED, "Booking cannot be confirmed")
+    if _is_past_or_now(booking.start_at):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Too late to confirm booking")
 
     booking.status = BookingStatus.CONFIRMED
-    booking.confirmed_at = _now()
 
     pref = (
         db.query(UserNotificationPreference)
@@ -468,11 +498,9 @@ async def reject_booking_service(
             "Not your salon",
         )
 
-    if booking.status != BookingStatus.PENDING:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "Booking cannot be rejected",
-        )
+    _assert_transition(booking, BookingStatus.REJECTED, "Booking cannot be rejected")
+    if _is_past_or_now(booking.start_at):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Too late to reject booking")
 
     booking.status = BookingStatus.REJECTED
 
@@ -520,20 +548,14 @@ async def complete_booking_service(
             "Not your salon",
         )
 
-    if booking.status != BookingStatus.CONFIRMED:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "Booking cannot be completed",
-        )
-
-    if booking.start_at > _now():
+    _assert_transition(booking, BookingStatus.COMPLETED, "Booking cannot be completed")
+    if _is_future(booking.start_at):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             "Booking has not started yet",
         )
 
     booking.status = BookingStatus.COMPLETED
-    booking.completed_at = _now()
 
     create_notification(
         db=db,
@@ -693,7 +715,7 @@ def _overlap_count(
 ) -> int:
     count_q = db.query(func.count(Booking.id)).filter(
         Booking.salon_service_price_id == salon_service_price_id,
-        Booking.status.in_([BookingStatus.PENDING, BookingStatus.CONFIRMED]),
+        Booking.status.in_(ACTIVE_BOOKING_STATUSES),
         Booking.start_at < end_at,
         Booking.end_at > start_at,
     )
@@ -742,18 +764,19 @@ async def reschedule_booking_service(
     if booking.customer_id != user_id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your booking")
 
-    if booking.status not in (BookingStatus.PENDING, BookingStatus.CONFIRMED):
+    if booking.status not in ACTIVE_BOOKING_STATUSES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Booking cannot be rescheduled")
-
-    if booking.start_at <= _now():
+    if _is_past_or_now(booking.start_at):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Too late to reschedule this booking")
 
-    if payload.start_at <= _now():
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "New start time must be in the future")
+    _validate_future_start(payload.start_at, "New start time must be in the future")
 
     new_end_at = payload.start_at + timedelta(minutes=booking.duration_minutes_snapshot)
 
     offering = db.query(SalonServicePrice).filter(SalonServicePrice.id == booking.salon_service_price_id).first()
+    if not offering:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Service offering not found")
+    _validate_bookable_offering(offering)
     _ensure_within_availability(
         db=db,
         salon_id=booking.salon_id,
@@ -778,6 +801,47 @@ async def reschedule_booking_service(
             booking_id=booking.id,
             commit=False,
         )
+
+    db.commit()
+    db.refresh(booking)
+    return booking
+
+
+# ---------------------------------------------------------
+# Mark no-show (salon)
+# ---------------------------------------------------------
+
+async def mark_no_show_service(
+    *,
+    db: Session,
+    booking_id: str,
+    user_id: str,
+) -> Booking:
+    booking = (
+        db.query(Booking)
+        .options(joinedload(Booking.salon))
+        .filter(Booking.id == booking_id)
+        .first()
+    )
+    if not booking:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Booking not found")
+
+    if booking.salon.user_id != user_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your salon")
+
+    _assert_transition(booking, BookingStatus.NO_SHOW, "Booking cannot be marked no-show")
+    if _is_future(booking.end_at):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Booking has not ended yet")
+
+    booking.status = BookingStatus.NO_SHOW
+    create_notification(
+        db=db,
+        recipient_id=booking.customer_id,
+        actor_id=user_id,
+        type="booking_no_show",
+        booking_id=booking.id,
+        commit=False,
+    )
 
     db.commit()
     db.refresh(booking)

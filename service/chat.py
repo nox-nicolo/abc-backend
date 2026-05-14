@@ -196,6 +196,37 @@ def create_booking_confirmed_chat_event(
         db.commit()
 
 
+def create_booking_expired_chat_event(
+    *,
+    db: Session,
+    booking: Booking,
+    commit: bool = False,
+) -> None:
+    conversation = get_or_create_conversation(
+        db=db,
+        customer_id=booking.customer_id,
+        salon_id=booking.salon_id,
+        commit=False,
+    )
+    service = booking.service_name_snapshot or "your service"
+    body = (
+        f"Your booking request for {service} expired because it was not "
+        "confirmed before the appointment time. You can rebook for a new time."
+    )
+    _add_message(
+        db=db,
+        conversation=conversation,
+        sender_user_id=conversation.salon_user_id,
+        sender_role="salon",
+        message_type="booking_expired",
+        body=body,
+        booking_id=booking.id,
+        created_by_system=True,
+    )
+    if commit:
+        db.commit()
+
+
 def _get_authorized_conversation(*, db: Session, user_id: str, conversation_id: str) -> ChatConversation:
     conversation = (
         db.query(ChatConversation)

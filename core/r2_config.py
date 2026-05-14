@@ -1,9 +1,11 @@
 import os
+import logging
 from dotenv import load_dotenv
 import boto3
 from botocore.client import Config
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 R2_ENDPOINT = os.getenv("R2_ENDPOINT")
 BUCKET_NAME = os.getenv("R2_BUCKET")
@@ -26,9 +28,14 @@ s3 = boto3.client(
 
 
 def upload_file(file, path: str, content_type: str | None = None):
-    print("Uploading to bucket =", repr(BUCKET_NAME))
-    print("Uploading key =", repr(path))
-    print("Content-Type =", repr(content_type))
+    logger.info(
+        "R2 upload started",
+        extra={
+            "event": "r2_upload_started",
+            "storage_provider": "cloudflare_r2",
+            "content_type": content_type,
+        },
+    )
 
     kwargs = {
         "Fileobj": file,
@@ -39,14 +46,57 @@ def upload_file(file, path: str, content_type: str | None = None):
     if content_type:
         kwargs["ExtraArgs"] = {"ContentType": content_type}
 
-    s3.upload_fileobj(**kwargs)
+    try:
+        s3.upload_fileobj(**kwargs)
+    except Exception:
+        logger.exception(
+            "R2 upload failed",
+            extra={
+                "event": "r2_upload_failed",
+                "storage_provider": "cloudflare_r2",
+                "content_type": content_type,
+            },
+        )
+        raise
+
+    logger.info(
+        "R2 upload completed",
+        extra={
+            "event": "r2_upload_completed",
+            "storage_provider": "cloudflare_r2",
+            "content_type": content_type,
+        },
+    )
     return path
 
 
 def delete_file(path: str):
-    print("Deleting from bucket =", repr(BUCKET_NAME))
-    print("Deleting key =", repr(path))
-    s3.delete_object(Bucket=BUCKET_NAME, Key=path)
+    logger.info(
+        "R2 delete started",
+        extra={
+            "event": "r2_delete_started",
+            "storage_provider": "cloudflare_r2",
+        },
+    )
+    try:
+        s3.delete_object(Bucket=BUCKET_NAME, Key=path)
+    except Exception:
+        logger.exception(
+            "R2 delete failed",
+            extra={
+                "event": "r2_delete_failed",
+                "storage_provider": "cloudflare_r2",
+            },
+        )
+        raise
+
+    logger.info(
+        "R2 delete completed",
+        extra={
+            "event": "r2_delete_completed",
+            "storage_provider": "cloudflare_r2",
+        },
+    )
 
 
 def build_file_url(path: str) -> str:
@@ -55,10 +105,10 @@ def build_file_url(path: str) -> str:
 
 def debug_r2():
     data = {
-        "R2_ENDPOINT": R2_ENDPOINT,
-        "BUCKET_NAME": BUCKET_NAME,
-        "BASE_URL": BASE_URL,
-        "ACCESS_KEY_LEN": len(ACCESS_KEY) if ACCESS_KEY else None,
+        "r2_endpoint_configured": bool(R2_ENDPOINT),
+        "r2_bucket_configured": bool(BUCKET_NAME),
+        "base_url_configured": bool(BASE_URL),
+        "access_key_configured": bool(ACCESS_KEY),
     }
 
     try:
@@ -70,7 +120,7 @@ def debug_r2():
     try:
         res = s3.list_objects_v2(Bucket=BUCKET_NAME, MaxKeys=5)
         data["list_objects"] = "OK"
-        data["sample_keys"] = [x["Key"] for x in res.get("Contents", [])]
+        data["sample_key_count"] = len(res.get("Contents", []))
     except Exception as e:
         data["list_objects"] = str(e)
 

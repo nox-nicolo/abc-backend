@@ -116,6 +116,7 @@ class BookingStatus(PyEnum):
     COMPLETED = "completed"
     REJECTED = "rejected"  # Salon declined the request
     CANCELLED = "cancelled"
+    EXPIRED = "expired"  # Salon did not confirm before the appointment time
     NO_SHOW = "no_show"  # Optional later Customer didn’t come
     
 class ServiceCreatedStatus(PyEnum):

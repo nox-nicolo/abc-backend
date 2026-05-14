@@ -409,16 +409,25 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import List
 
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_, func
 
 from core.r2_config import BASE_URL
-from core.enumeration import ImageDirectories
+from core.enumeration import BookingStatus, ImageDirectories, ServiceCreatedStatus
 from models.auth.user import User
-from models.posts.posts import Hashtag
-from models.profile.salon import Salon, SalonServicePrice
+from models.booking.booking import Booking, ServiceReview
+from models.posts.posts import Hashtag, Post
+from models.profile.salon import (
+    Salon,
+    SalonContact,
+    SalonGallery,
+    SalonReport,
+    SalonServicePrice,
+    SalonWorkingHour,
+)
 from models.services.service import Services, SubServices
 
 from pydantic_schemas.search.search import (
@@ -555,7 +564,96 @@ def search_salons(db: Session, q: str, limit: int, current_user_id: str) -> List
         if salon.user_id == current_user_id:
             continue
 
-        is_verified = bool(salon.user.is_verified) if salon.user else False
+        active_services_count = (
+            db.query(func.count(SalonServicePrice.id))
+            .filter(
+                SalonServicePrice.salon_id == salon.id,
+                SalonServicePrice.status == ServiceCreatedStatus.ACTIVE,
+            )
+            .scalar()
+            or 0
+        )
+        gallery_count = (
+            db.query(func.count(SalonGallery.id))
+            .filter(SalonGallery.salon_id == salon.id)
+            .scalar()
+            or 0
+        )
+        verified_contacts_count = (
+            db.query(func.count(SalonContact.id))
+            .filter(
+                SalonContact.salon_id == salon.id,
+                SalonContact.is_verified.is_(True),
+            )
+            .scalar()
+            or 0
+        )
+        open_days_count = (
+            db.query(func.count(SalonWorkingHour.id))
+            .filter(
+                SalonWorkingHour.salon_id == salon.id,
+                SalonWorkingHour.is_open.is_(True),
+                SalonWorkingHour.open_time.isnot(None),
+                SalonWorkingHour.close_time.isnot(None),
+            )
+            .scalar()
+            or 0
+        )
+        posts_count = (
+            db.query(func.count(Post.id))
+            .filter(Post.user_id == salon.user_id)
+            .scalar()
+            or 0
+        )
+        completed_bookings_count = (
+            db.query(func.count(Booking.id))
+            .filter(
+                Booking.salon_id == salon.id,
+                Booking.status == BookingStatus.COMPLETED,
+            )
+            .scalar()
+            or 0
+        )
+        reviews_count = (
+            db.query(func.count(ServiceReview.id))
+            .filter(ServiceReview.salon_id == salon.id)
+            .scalar()
+            or 0
+        )
+        rating_avg = (
+            db.query(func.avg(ServiceReview.rating))
+            .filter(ServiceReview.salon_id == salon.id)
+            .scalar()
+        )
+        reports_count = (
+            db.query(func.count(SalonReport.id))
+            .filter(SalonReport.salon_id == salon.id)
+            .scalar()
+            or 0
+        )
+        salon_created_at = salon.created_at
+        if salon_created_at.tzinfo is None:
+            salon_created_at = salon_created_at.replace(tzinfo=timezone.utc)
+        account_age_days = (datetime.now(timezone.utc) - salon_created_at).days
+        is_verified = bool(
+            salon.user
+            and salon.user.is_verified
+            and salon.title
+            and salon.slogan
+            and salon.description
+            and account_age_days >= 30
+            and salon.display_ads
+            and salon.display_ads != "Not Set"
+            and gallery_count >= 3
+            and active_services_count >= 3
+            and verified_contacts_count >= 2
+            and open_days_count >= 5
+            and posts_count >= 3
+            and completed_bookings_count >= 10
+            and reviews_count >= 10
+            and float(rating_avg or 0) >= 4.5
+            and reports_count == 0
+        )
         owner_name = salon.user.name if salon.user else None
 
         fallback_profile = (

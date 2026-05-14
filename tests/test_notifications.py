@@ -1,0 +1,99 @@
+import pytest
+
+from models.auth.user import User
+from models.notifications.notification import Notification
+from models.profile.notification_preferences import UserNotificationPreference
+from service.notification import notification as notification_service
+
+from tests.conftest import make_user
+
+
+@pytest.fixture()
+def notification_db(db_session_factory):
+    yield from db_session_factory(
+        [
+            User.__table__,
+            UserNotificationPreference.__table__,
+            Notification.__table__,
+        ]
+    )
+
+
+@pytest.fixture(autouse=True)
+def disable_push(monkeypatch):
+    calls = []
+
+    def fake_send_push_to_user(**kwargs):
+        calls.append(kwargs)
+        return {"sent": True}
+
+    monkeypatch.setattr(notification_service, "send_push_to_user", fake_send_push_to_user)
+    return calls
+
+
+def test_create_notification_skips_self_actions(notification_db, disable_push):
+    user = make_user(user_id="user-1")
+    notification_db.add(user)
+    notification_db.commit()
+
+    result = notification_service.create_notification(
+        db=notification_db,
+        recipient_id=user.id,
+        actor_id=user.id,
+        type="like",
+    )
+
+    assert result is None
+    assert notification_db.query(Notification).count() == 0
+    assert disable_push == []
+
+
+def test_create_notification_respects_user_preferences(notification_db, disable_push):
+    recipient = make_user(user_id="recipient")
+    actor = make_user(user_id="actor")
+    notification_db.add_all(
+        [
+            recipient,
+            actor,
+            UserNotificationPreference(
+                user_id=recipient.id,
+                allow_likes=False,
+                allow_comments=True,
+                allow_bookings=True,
+                allow_promotions=True,
+                allow_reminders=True,
+            ),
+        ]
+    )
+    notification_db.commit()
+
+    result = notification_service.create_notification(
+        db=notification_db,
+        recipient_id=recipient.id,
+        actor_id=actor.id,
+        type="like",
+    )
+
+    assert result is None
+    assert notification_db.query(Notification).count() == 0
+    assert disable_push == []
+
+
+def test_welcome_notification_is_idempotent(notification_db, disable_push):
+    user = make_user(user_id="welcome-user")
+    notification_db.add(user)
+    notification_db.commit()
+
+    first = notification_service.create_welcome_notification(
+        db=notification_db,
+        user_id=user.id,
+    )
+    second = notification_service.create_welcome_notification(
+        db=notification_db,
+        user_id=user.id,
+    )
+
+    assert first.id == second.id
+    assert notification_db.query(Notification).count() == 1
+    assert len(disable_push) == 1
+    assert disable_push[0]["title"] == "Welcome to African Beauty"

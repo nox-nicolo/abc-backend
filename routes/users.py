@@ -24,6 +24,7 @@ from service.auth.JWT.oauth2 import get_current_user
 from service.customer.following import get_my_following
 from service.customer.profile import get_customer_profile_, update_customer_profile_
 from service.search.users import recommend_user, search_user
+from service.notification.push import push_service_status, send_test_push_to_user
 from service.users.mutes import list_mutes, mute_target, unmute_target
 from service.users.device_tokens import deactivate_device_token, list_device_tokens, upsert_device_token
 from service.users.notification_preferences import (
@@ -123,6 +124,22 @@ def register_my_device_token(
     db: Session = Depends(get_db),
 ):
     return upsert_device_token(db=db, user_id=current_user.user_id, payload=payload)
+
+
+@users.get("/me/push-status")
+def get_my_push_status(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return push_service_status(db=db, user_id=current_user.user_id)
+
+
+@users.post("/me/push-test")
+def send_my_push_test(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return send_test_push_to_user(db=db, user_id=current_user.user_id)
 
 
 @users.delete("/me/device-tokens/{device_id}", status_code=200)

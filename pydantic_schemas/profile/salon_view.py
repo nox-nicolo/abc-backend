@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 
@@ -13,6 +13,13 @@ class SalonCoreSchema(BaseModel):
     profile_picture: Optional[str]
     cover_image: Optional[str]
     is_verified: bool
+    verification_status: str = "not_verified"
+    verification_label: str = "Not verified"
+    verification_reasons: List[str] = Field(default_factory=list)
+    verification_missing: List[str] = Field(default_factory=list)
+    is_premium_member: bool = False
+    premium_plan: Optional[str] = None
+    premium_label: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -162,4 +169,3 @@ class SalonViewProfileResponseSchema(BaseModel):
     media: SalonMediaSchema
     actions: SalonActionsSchema
     services: SalonServicesSchema
-

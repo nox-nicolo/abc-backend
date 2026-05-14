@@ -24,7 +24,7 @@ from pydantic_schemas.booking.booking import (
 
 from pydantic_schemas.booking.choose_salon import SalonOfferListResponse
 from service.auth.JWT.oauth2 import get_current_user
-from service.booking.booking import cancel_booking_service, complete_booking_service, confirm_booking_service, create_booking_service, create_review_service, get_availability_slots_service, get_booking_service, get_salon_bookings_service, get_salons_for_style, get_user_bookings_service, reject_booking_service, reschedule_booking_service
+from service.booking.booking import cancel_booking_service, complete_booking_service, confirm_booking_service, create_booking_service, create_review_service, get_availability_slots_service, get_booking_service, get_salon_bookings_service, get_salons_for_style, get_user_bookings_service, mark_no_show_service, reject_booking_service, reschedule_booking_service
 
 
 booking = APIRouter(
@@ -376,6 +376,42 @@ async def complete_booking(
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"detail": f"An unexpected error occurred: {e}"}
+        )
+
+
+# -------------------------------------------------------------------
+# Mark no-show (salon)
+# -------------------------------------------------------------------
+@booking.post(
+    "/{booking_id}/no-show",
+    response_model=BookingResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def mark_no_show(
+    booking_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    enforce_rate_limit(
+        request,
+        bucket="booking:no_show",
+        limit=30,
+        window_seconds=300,
+        user_id=current_user.user_id,
+    )
+    try:
+        return await mark_no_show_service(
+            db=db,
+            booking_id=booking_id,
+            user_id=current_user.user_id,
+        )
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": f"An unexpected error occurred: {e}"},
         )
 
 

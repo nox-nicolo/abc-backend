@@ -298,6 +298,7 @@ from pydantic_schemas.set_account.set_account import (
     UserProfileResponse,
     UsernameCheckRequest,
 )
+from service.notification.notification import create_welcome_notification
 
 PROFILE_IMAGE_BASE = f"{BASE_URL}/{ImageDirectories.PROFILE_DIR.value}"
 
@@ -420,6 +421,7 @@ async def upload_account_(
 
     try:
         db.commit()
+        create_welcome_notification(db=db, user_id=user.id)
 
         if uploaded_new_image and prev_filename and prev_filename != "user.png":
             old_r2_path = f"{ImageDirectories.PROFILE_DIR.value}{prev_filename}"
