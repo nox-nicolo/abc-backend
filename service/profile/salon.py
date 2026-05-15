@@ -130,8 +130,6 @@ SALON_GALLERY_BASE = f"{BASE_URL}/{ImageDirectories.SALON_GALLERY_DIR.value}"
 
 
 async def profile_salon(db: Session, user: str):
-    print(user)
-
     user_db = db.query(User).filter(User.id == user).first()
     if not user_db:
         raise HTTPException(status_code=404, detail="User not found")
@@ -208,6 +206,7 @@ async def profile_salon(db: Session, user: str):
             salon.working_hours, key=lambda x: x.day_of_week
         ),
         "gallery": gallery_data,
+        "followers": SalonFollower_count,
         "SalonFollower": SalonFollower_count,
         "rated": float(rated_count),
     }

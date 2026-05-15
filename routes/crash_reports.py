@@ -10,10 +10,10 @@ logger = logging.getLogger("abc.crash_reports")
 
 
 class CrashReportPayload(BaseModel):
-    message: str = Field(..., max_length=500)
-    error: str = Field(..., max_length=4000)
-    stack_trace: Optional[str] = Field(None, max_length=12000)
-    context: Optional[str] = Field(None, max_length=200)
+    message: str = Field(..., max_length=1000)
+    error: str = Field(..., max_length=8000)
+    stack_trace: Optional[str] = Field(None, max_length=30000)
+    context: Optional[str] = Field(None, max_length=1000)
     platform: Optional[str] = Field(None, max_length=80)
     app_version: Optional[str] = Field(None, max_length=80)
     build_number: Optional[str] = Field(None, max_length=80)
