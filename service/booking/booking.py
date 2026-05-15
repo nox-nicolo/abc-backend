@@ -22,7 +22,13 @@ from pydantic_schemas.booking.booking import (
 from pydantic_schemas.pagination import pagination_meta
 
 from pydantic_schemas.booking.choose_salon import SalonOfferForBooking
-from service.booking.helper import _auto_no_show, _is_future, _is_past_or_now, _now
+from service.booking.helper import (
+    _auto_expire_pending,
+    _auto_no_show,
+    _is_future,
+    _is_past_or_now,
+    _now,
+)
 from models.profile.notification_preferences import UserNotificationPreference
 from service.chat import create_booking_chat_event, create_booking_confirmed_chat_event
 from service.notification.booking_ai import (
@@ -49,6 +55,32 @@ BOOKING_TRANSITIONS = {
         BookingStatus.NO_SHOW,
     },
 }
+
+
+def expire_pending_bookings_for_scope(
+    db: Session,
+    *,
+    customer_id: Optional[str] = None,
+    salon_id: Optional[str] = None,
+) -> int:
+    query = (
+        db.query(Booking)
+        .options(joinedload(Booking.customer), joinedload(Booking.salon))
+        .filter(
+            Booking.status == BookingStatus.PENDING,
+            Booking.start_at <= _now(),
+        )
+    )
+    if customer_id is not None:
+        query = query.filter(Booking.customer_id == customer_id)
+    if salon_id is not None:
+        query = query.filter(Booking.salon_id == salon_id)
+
+    expired = 0
+    for booking in query.all():
+        if _auto_expire_pending(booking, db=db):
+            expired += 1
+    return expired
 
 
 def _assert_transition(
@@ -198,6 +230,9 @@ async def get_user_bookings_service(
     limit: int,
     offset: int,
 ) -> dict:
+    expired = expire_pending_bookings_for_scope(db, customer_id=user_id)
+    if expired:
+        db.commit()
 
     query = (
         db.query(Booking)
@@ -222,6 +257,7 @@ async def get_user_bookings_service(
     )
 
     for booking in bookings:
+        _auto_expire_pending(booking, db=db)
         _auto_no_show(booking)
 
     db.commit()
@@ -260,6 +296,7 @@ async def get_booking_service(
             "Access denied",
         )
 
+    _auto_expire_pending(booking, db=db)
     _auto_no_show(booking)
     db.commit()
 
@@ -347,6 +384,10 @@ async def get_salon_bookings_service(
             "Salon not found",
         )
 
+    expired = expire_pending_bookings_for_scope(db, salon_id=salon.id)
+    if expired:
+        db.commit()
+
     query = db.query(Booking).filter(Booking.salon_id == salon.id)
 
     if status:
@@ -384,6 +425,7 @@ async def get_salon_bookings_service(
     )
 
     for booking in bookings:
+        _auto_expire_pending(booking, db=db)
         _auto_no_show(booking)
 
     db.commit()
@@ -418,6 +460,14 @@ async def confirm_booking_service(
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "Not your salon",
+        )
+
+    if _auto_expire_pending(booking, db=db):
+        db.commit()
+        db.refresh(booking)
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "This booking request has expired because the appointment time has passed",
         )
 
     _assert_transition(booking, BookingStatus.CONFIRMED, "Booking cannot be confirmed")
@@ -496,6 +546,14 @@ async def reject_booking_service(
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "Not your salon",
+        )
+
+    if _auto_expire_pending(booking, db=db):
+        db.commit()
+        db.refresh(booking)
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "This booking request has expired because the appointment time has passed",
         )
 
     _assert_transition(booking, BookingStatus.REJECTED, "Booking cannot be rejected")

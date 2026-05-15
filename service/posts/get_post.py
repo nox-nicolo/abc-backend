@@ -20,6 +20,7 @@ from models.posts.posts import (
     PostBoorkmark,
     PostComment,
     PostLike,
+    PostReaction,
     PostShare,
     PostSettings,
 )
@@ -28,6 +29,7 @@ from models.auth.user import User
 from models.profile.salon import SalonFollower, Salon, SalonLocation, SalonServiceBenefit, SalonServicePrice, SalonServiceProduct, SponsoredSalon
 from pydantic_schemas.posts.single_post import BookingState, EngagementState, OtherPostsSection, PostPreview, PriceRange, ReviewSection, ServiceProduct, ServiceSection, SimilarSection, SinglePostResponse, SponsoredSalonSection, StylistSection
 from service.trending.logic import apply_trending_logic
+from service.posts.repost import can_share_post
 
 from core.r2_config import BASE_URL 
 from core.enumeration import (
@@ -430,6 +432,17 @@ async def get_post__(
         .scalar()
         or 0
     )
+    reactions = dict(
+        db.query(PostReaction.reaction, func.count(PostReaction.id))
+        .filter(PostReaction.post_id == post_id)
+        .group_by(PostReaction.reaction)
+        .all()
+    )
+    my_reaction = (
+        db.query(PostReaction.reaction)
+        .filter(PostReaction.post_id == post_id, PostReaction.user_id == user_id)
+        .scalar()
+    )
 
     is_liked = (
         db.query(PostLike)
@@ -502,10 +515,12 @@ async def get_post__(
             "comments": comments or 0, 
             "shares": shares or 0, 
         },
+        "reactions": reactions,
         "viewer_state": {
             "is_liked": is_liked,
             "is_saved": is_saved,
             "is_my_post": post.user_id == user_id,
+            "reaction": my_reaction,
         },
         "created_at": post.created_at,
     }
@@ -549,6 +564,7 @@ def _map_post_to_post_response_schema(raw: Dict[str, Any]) -> Dict[str, Any]:
         },
 
         "stats": raw["stats"],
+        "reactions": raw.get("reactions", {}),
 
         "viewer_state": raw["viewer_state"],
 
@@ -1181,7 +1197,10 @@ async def get_single_post_view_(
     engagement = EngagementState(
         liked=bool(viewer_state.get("is_liked", False)),
         saved=bool(viewer_state.get("is_saved", False)),
-        can_comment=True,  # keep True for now; later you can restrict if needed
+        can_comment=not bool(post.settings and post.settings.allow_comments is False),
+        can_share=can_share_post(post=post, user_id=current_user.user_id, db=db),
+        can_react=not bool(post.settings and post.settings.disable_reactions),
+        my_reaction=viewer_state.get("reaction"),
     )
 
     booking = _build_booking_state(

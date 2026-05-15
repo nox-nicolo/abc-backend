@@ -15,6 +15,13 @@ from pydantic_schemas.posts.comment import (
     CommentCreateRequest,
     CommentItem,
     CommentListResponse,
+    CommentLikeResponse,
+)
+from pydantic_schemas.posts.reaction import (
+    PostReactionRequest,
+    PostReactionResponse,
+    PostShareRequest,
+    PostShareResponse,
 )
 from pydantic_schemas.posts.single_post import SinglePostResponse
 from routes.post_router_helper import FormPostData
@@ -23,6 +30,7 @@ from service.posts.comment_post import (
     create_comment,
     delete_comment,
     list_comments,
+    toggle_comment_like,
 )
 from service.posts.create_post import create_post_
 from service.posts.get_post import (
@@ -34,7 +42,8 @@ from service.posts.get_post import (
 from service.posts.delete_post import delete_post_
 from service.posts.like_post import toggle_like
 from service.posts.pin_post import toggle_pin_
-from service.posts.repost import repost_
+from service.posts.reaction import reaction_state, set_reaction
+from service.posts.repost import repost_, share_post_to_users
 from service.posts.save_post import toggle_bookmark
 from service.posts.update_post import update_post_
 
@@ -247,6 +256,61 @@ def repost_post(
     return repost_(post_id=post_id, user_id=current_user.user_id, db=db)
 
 
+@posts.post("/{post_id}/share", response_model=PostShareResponse, status_code=200)
+def share_post(
+    post_id: str,
+    payload: PostShareRequest,
+    request: Request,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    enforce_rate_limit(
+        request,
+        bucket="posts:share",
+        limit=30,
+        window_seconds=60,
+        user_id=current_user.user_id,
+    )
+    return share_post_to_users(
+        post_id=post_id,
+        user_id=current_user.user_id,
+        payload=payload,
+        db=db,
+    )
+
+
+@posts.get("/{post_id}/reactions", response_model=PostReactionResponse)
+def get_post_reactions(
+    post_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return reaction_state(post_id=post_id, user_id=current_user.user_id, db=db)
+
+
+@posts.post("/{post_id}/reactions", response_model=PostReactionResponse, status_code=200)
+def react_to_post(
+    post_id: str,
+    payload: PostReactionRequest,
+    request: Request,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    enforce_rate_limit(
+        request,
+        bucket="posts:react",
+        limit=60,
+        window_seconds=60,
+        user_id=current_user.user_id,
+    )
+    return set_reaction(
+        post_id=post_id,
+        user_id=current_user.user_id,
+        reaction=payload.reaction,
+        db=db,
+    )
+
+
 # ---------------------------------------------------
 # Pin / Unpin (toggle)
 # ---------------------------------------------------
@@ -346,6 +410,33 @@ def remove_comment(
     db: Session = Depends(get_db),
 ):
     return delete_comment(
+        post_id=post_id,
+        comment_id=comment_id,
+        user_id=current_user.user_id,
+        db=db,
+    )
+
+
+@posts.post(
+    "/{post_id}/comments/{comment_id}/like",
+    response_model=CommentLikeResponse,
+    status_code=200,
+)
+def like_comment(
+    post_id: str,
+    comment_id: str,
+    request: Request,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    enforce_rate_limit(
+        request,
+        bucket="posts:comment-like",
+        limit=60,
+        window_seconds=60,
+        user_id=current_user.user_id,
+    )
+    return toggle_comment_like(
         post_id=post_id,
         comment_id=comment_id,
         user_id=current_user.user_id,

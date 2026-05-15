@@ -1,6 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel, Field
-from typing import Optional, Literal, List
+from typing import Optional, Literal, List, Dict
 
 
 # ───────────────── Location ─────────────────
@@ -59,6 +59,7 @@ class ViewerStateSchema(BaseModel):
     is_liked: bool = False
     is_saved: bool = False
     is_my_post: bool = False
+    reaction: Optional[str] = None
 
 
 # ───────────────── Post Response ─────────────────
@@ -74,6 +75,7 @@ class PostResponseSchema(BaseModel):
     service: ServiceMetaSchema
 
     stats: PostStatsSchema
+    reactions: Dict[str, int] = Field(default_factory=dict)
     viewer_state: ViewerStateSchema
 
     created_at: datetime

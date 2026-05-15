@@ -31,6 +31,7 @@ from service.notification.notification import (
     create_notification,
     log_notification_send,
 )
+from service.booking.booking import expire_pending_bookings_for_scope
 from service.profile.top_salon import get_top_salons
 from worker.celery_app import celery_app
 
@@ -96,6 +97,22 @@ def refresh_top_salon_ranking(limit: int = 100) -> dict:
         count = len(result.get("results", []))
         logger.info("refreshed top salon ranking candidates=%s", count)
         return {"ranked_salons": count}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="worker.tasks.expire_pending_bookings")
+def expire_pending_bookings() -> dict:
+    db = SessionLocal()
+    try:
+        expired = expire_pending_bookings_for_scope(db)
+        db.commit()
+        logger.info("expired pending bookings=%s", expired)
+        return {"expired_bookings": expired}
+    except Exception:
+        db.rollback()
+        logger.exception("expire_pending_bookings failed")
+        raise
     finally:
         db.close()
 

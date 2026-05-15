@@ -253,6 +253,7 @@ def _push_copy(
         "booking_new": ("New booking", f"{actor_name} requested a booking"),
         "booking_confirmed": ("Booking confirmed", "Your booking was confirmed"),
         "booking_rejected": ("Booking declined", "Your booking was declined"),
+        "booking_expired": ("Booking expired", "A booking request expired"),
         "booking_cancelled": ("Booking cancelled", f"{actor_name} cancelled a booking"),
         "booking_completed": ("Booking completed", "Your booking was completed"),
         "booking_no_show": ("Booking no-show", "A booking was marked as no-show"),

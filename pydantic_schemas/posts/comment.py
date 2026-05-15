@@ -22,6 +22,8 @@ class CommentItem(BaseModel):
     author: CommentAuthor
     parent_comment_id: Optional[str] = None
     reply_count: int = 0
+    likes_count: int = 0
+    is_liked: bool = False
     created_at: datetime
     is_mine: bool = False
 
@@ -29,3 +31,9 @@ class CommentItem(BaseModel):
 class CommentListResponse(BaseModel):
     items: List[CommentItem]
     next_cursor: Optional[str] = None
+
+
+class CommentLikeResponse(BaseModel):
+    comment_id: str
+    liked: bool
+    likes_count: int

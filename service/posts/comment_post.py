@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 from core.enumeration import ImageDirectories
 from core.r2_config import BASE_URL
 from models.auth.user import User
-from models.posts.posts import Post, PostComment
+from models.posts.posts import Post, PostComment, PostCommentLike
 from pydantic_schemas.posts.comment import (
     CommentAuthor,
     CommentCreateRequest,
@@ -32,6 +32,8 @@ def _to_item(
     comment: PostComment,
     viewer_user_id: str,
     reply_counts: dict[str, int],
+    like_counts: dict[str, int],
+    liked_ids: set[str],
 ) -> CommentItem:
     user = comment.user
     return CommentItem(
@@ -45,6 +47,8 @@ def _to_item(
         ),
         parent_comment_id=comment.comment_id,
         reply_count=reply_counts.get(comment.id, 0),
+        likes_count=like_counts.get(comment.id, 0),
+        is_liked=comment.id in liked_ids,
         created_at=comment.created_at,
         is_mine=comment.user_com == viewer_user_id,
     )
@@ -118,7 +122,13 @@ def create_comment(
         .first()
     )
 
-    return _to_item(comment, viewer_user_id=user_id, reply_counts={})
+    return _to_item(
+        comment,
+        viewer_user_id=user_id,
+        reply_counts={},
+        like_counts={},
+        liked_ids=set(),
+    )
 
 
 # ------------------------------------------------------------------
@@ -165,6 +175,8 @@ def list_comments(
     )
 
     reply_counts: dict[str, int] = {}
+    like_counts: dict[str, int] = {}
+    liked_ids: set[str] = set()
     if comments and parent_comment_id is None:
         ids = [c.id for c in comments]
         rows = (
@@ -174,10 +186,38 @@ def list_comments(
             .all()
         )
         reply_counts = {cid: n for cid, n in rows}
+    if comments:
+        ids = [c.id for c in comments]
+        like_rows = (
+            db.query(PostCommentLike.comment_id, func.count(PostCommentLike.id))
+            .filter(
+                PostCommentLike.comment_id.in_(ids),
+                PostCommentLike.liked.is_(True),
+            )
+            .group_by(PostCommentLike.comment_id)
+            .all()
+        )
+        like_counts = {cid: n for cid, n in like_rows}
+        liked_ids = {
+            row[0]
+            for row in db.query(PostCommentLike.comment_id)
+            .filter(
+                PostCommentLike.comment_id.in_(ids),
+                PostCommentLike.user_id == viewer_user_id,
+                PostCommentLike.liked.is_(True),
+            )
+            .all()
+        }
 
     return CommentListResponse(
         items=[
-            _to_item(c, viewer_user_id=viewer_user_id, reply_counts=reply_counts)
+            _to_item(
+                c,
+                viewer_user_id=viewer_user_id,
+                reply_counts=reply_counts,
+                like_counts=like_counts,
+                liked_ids=liked_ids,
+            )
             for c in comments
         ],
         next_cursor=comments[-1].created_at.isoformat() if comments else None,
@@ -218,3 +258,54 @@ def delete_comment(
     db.commit()
 
     return {"comment_id": comment_id, "deleted": True}
+
+
+def toggle_comment_like(
+    *,
+    post_id: str,
+    comment_id: str,
+    user_id: str,
+    db: Session,
+) -> dict:
+    comment = (
+        db.query(PostComment)
+        .filter(PostComment.id == comment_id, PostComment.post_id == post_id)
+        .first()
+    )
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    like = (
+        db.query(PostCommentLike)
+        .filter(
+            PostCommentLike.comment_id == comment_id,
+            PostCommentLike.user_id == user_id,
+        )
+        .first()
+    )
+    if like:
+        like.liked = not like.liked
+    else:
+        like = PostCommentLike(
+            id=str(uuid.uuid4()),
+            comment_id=comment_id,
+            user_id=user_id,
+            liked=True,
+        )
+        db.add(like)
+
+    db.commit()
+    likes_count = (
+        db.query(func.count(PostCommentLike.id))
+        .filter(
+            PostCommentLike.comment_id == comment_id,
+            PostCommentLike.liked.is_(True),
+        )
+        .scalar()
+        or 0
+    )
+    return {
+        "comment_id": comment_id,
+        "liked": like.liked,
+        "likes_count": likes_count,
+    }

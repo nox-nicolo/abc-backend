@@ -79,6 +79,9 @@ class EngagementState(BaseModel):
     liked: bool
     saved: bool
     can_comment: bool
+    can_share: bool
+    can_react: bool
+    my_reaction: Optional[str] = None
 
 
 #   Booking State

@@ -64,6 +64,7 @@ class Post(Base):
     user = relationship("User", back_populates="posts")
     comments = relationship("PostComment", back_populates="post", cascade="all, delete-orphan")
     likes = relationship("PostLike", back_populates="post", cascade="all, delete-orphan")
+    reactions = relationship("PostReaction", back_populates="post", cascade="all, delete-orphan")
     shares = relationship("PostShare", back_populates="post", cascade="all, delete-orphan")
     sub_service = relationship("SubServices", back_populates="posts")
     reports = relationship("PostReport", back_populates="post", cascade="all, delete-orphan")
@@ -329,6 +330,33 @@ class PostLike(Base):
         return f"<PostLike id={self.id}, post_id={self.post_id}, user_id={self.user_id}, created_at={self.created_at}>"
 
 
+# -----------------------------------------------------------
+# 11b. MODEL: PostReaction
+# -----------------------------------------------------------
+class PostReaction(Base):
+    __tablename__ = "post_reactions"
+
+    id = Column(String(36), primary_key=True, index=True)
+    post_id = Column(String(36), ForeignKey("posts.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    reaction = Column(String(24), nullable=False)
+    created_at = Column(TIMESTAMP, default=datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(
+        TIMESTAMP,
+        default=datetime.now(timezone.utc),
+        onupdate=datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    post = relationship("Post", back_populates="reactions")
+    user = relationship("User")
+
+    __table_args__ = (
+        Index("ix_post_reactions_post_reaction", "post_id", "reaction"),
+        Index("ix_post_reactions_post_user", "post_id", "user_id", unique=True),
+    )
+
+
 
 # -----------------------------------------------------------
 # 12. MODEL: PostComment
@@ -346,6 +374,7 @@ class PostComment(Base):
 
     post = relationship("Post", back_populates="comments")
     user = relationship("User", back_populates="comments")
+    likes = relationship("PostCommentLike", back_populates="comment", cascade="all, delete-orphan")
     parent_comment = relationship(
         "PostComment",
         remote_side=[id],
@@ -365,6 +394,24 @@ class PostComment(Base):
 
     def __repr__(self):
         return f"<PostComment id={self.id}, post_id={self.post_id}, user_id={self.user_id}, content={self.content[:20]}...>"
+
+
+class PostCommentLike(Base):
+    __tablename__ = "post_comment_likes"
+
+    id = Column(String(36), primary_key=True, index=True)
+    comment_id = Column(String(36), ForeignKey("post_comments.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    liked = Column(Boolean, default=True, nullable=False)
+    created_at = Column(TIMESTAMP, default=datetime.now(timezone.utc), nullable=False)
+
+    comment = relationship("PostComment", back_populates="likes")
+    user = relationship("User")
+
+    __table_args__ = (
+        Index("ix_post_comment_likes_comment_liked", "comment_id", "liked"),
+        Index("ix_post_comment_likes_comment_user", "comment_id", "user_id", unique=True),
+    )
 
 
 

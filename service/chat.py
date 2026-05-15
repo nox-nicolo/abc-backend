@@ -200,6 +200,7 @@ def create_booking_expired_chat_event(
     *,
     db: Session,
     booking: Booking,
+    message: Optional[str] = None,
     commit: bool = False,
 ) -> None:
     conversation = get_or_create_conversation(
@@ -208,18 +209,17 @@ def create_booking_expired_chat_event(
         salon_id=booking.salon_id,
         commit=False,
     )
-    service = booking.service_name_snapshot or "your service"
-    body = (
-        f"Your booking request for {service} expired because it was not "
-        "confirmed before the appointment time. You can rebook for a new time."
-    )
     _add_message(
         db=db,
         conversation=conversation,
         sender_user_id=conversation.salon_user_id,
         sender_role="salon",
         message_type="booking_expired",
-        body=body,
+        body=message
+        or (
+            "Your booking request expired because it was not approved before "
+            "the appointment time. You can rebook for a new time."
+        ),
         booking_id=booking.id,
         created_by_system=True,
     )

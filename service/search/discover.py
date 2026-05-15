@@ -71,9 +71,6 @@ def get_nearby_salons(
         )
     )
 
-    if current_user_id is not None:
-        query = query.filter(Salon.user_id != current_user_id)
-
     rows = query.all()
 
     results = []
@@ -93,6 +90,41 @@ def get_nearby_salons(
             })
 
     results.sort(key=lambda x: x["distance_km"])
+    if not results:
+        fallback_rows = (
+            db.query(
+                Salon.id,
+                Salon.title,
+                Salon.display_ads,
+                SalonLocation.city,
+                SalonLocation.latitude,
+                SalonLocation.longitude,
+                ProfilePicture.file_name.label("profile_file"),
+            )
+            .join(SalonLocation, SalonLocation.salon_id == Salon.id)
+            .join(User, User.id == Salon.user_id)
+            .outerjoin(ProfilePicture, ProfilePicture.user_id == User.id)
+            .filter(
+                SalonLocation.latitude.isnot(None),
+                SalonLocation.longitude.isnot(None),
+            )
+            .all()
+        )
+        for row in fallback_rows:
+            if row.latitude is None or row.longitude is None:
+                continue
+            dist = _haversine_km(lat, lng, row.latitude, row.longitude)
+            results.append({
+                "id": row.id,
+                "title": row.title or "",
+                "cover_image": _cover_from_row(row.display_ads, row.profile_file),
+                "city": row.city,
+                "distance_km": round(dist, 1),
+                "lat": row.latitude,
+                "lng": row.longitude,
+            })
+        results.sort(key=lambda x: x["distance_km"])
+
     total = len(results)
     return {
         "items": results[offset: offset + limit],
@@ -122,7 +154,6 @@ def get_top_salons(
         .join(User, User.id == Salon.user_id)
         .outerjoin(ProfilePicture, ProfilePicture.user_id == User.id)
         .outerjoin(SalonLocation, SalonLocation.salon_id == Salon.id)
-        .filter(Salon.user_id != current_user_id)
         .group_by(
             Salon.id,
             Salon.title,
