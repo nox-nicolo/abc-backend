@@ -11,7 +11,6 @@
 #     """
 #     Search users by their username or full name and include profile picture.
 #     """
-#     print(f"query: {query}")
 #     rows = db.query(User, ProfilePicture).outerjoin(
 #         ProfilePicture, ProfilePicture.user_id == User.id
 #     ).filter(
@@ -19,13 +18,10 @@
 #         User.id != current_user
 #     ).all()
 
-#     print(rows)
-
 #     results = []
 #     for user, pic in rows:
 #         pic_url = None
 #         if pic is not None:
-#             print(pic.file_name)
 #             # get possible filename/path fields
 #             dir_part = PROFILE_IMAGE_BASE.strip("/")
 #             pic_url = f"{dir_part}/{pic.file_name}"
@@ -65,8 +61,6 @@ async def search_user(
     """
     Search users by their username or full name and include profile picture.
     """
-    print(f"query: {query}")
-
     db_query = db.query(User, ProfilePicture).outerjoin(
         ProfilePicture, ProfilePicture.user_id == User.id
     ).filter(
@@ -76,13 +70,10 @@ async def search_user(
     total = db_query.count()
     rows = db_query.offset(offset).limit(limit).all()
 
-    print(rows)
-
     results = []
     for user, pic in rows:
         pic_url = None
         if pic is not None and pic.file_name:
-            print(pic.file_name)
             pic_url = f"{PROFILE_IMAGE_BASE}{pic.file_name}"
 
         results.append({

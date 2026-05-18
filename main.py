@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.middleware.cors import CORSMiddleware
 from core.observability import install_observability
-from routes import auth, booking, chat, crash_reports, notifications, posts, profile, search, service, setup_profile, users
+from routes import auth, booking, chat, crash_reports, health, notifications, posts, profile, search, service, setup_profile, users
 
 app = FastAPI(docs_url=None)  # Disable default Swagger UI
 install_observability(app)
@@ -44,6 +44,7 @@ API_ROUTERS = (
     notifications.notifications,
     chat.chat,
     crash_reports.crash_reports,
+    health.health,
 )
 
 for router in API_ROUTERS:

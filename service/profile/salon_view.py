@@ -412,7 +412,7 @@ def _salon_verification_state(
             "Keep the salon active for at least 30 days",
         ),
         (
-            bool(salon.display_ads and salon.display_ads != "Not Set" and len(salon.galleries) >= 3),
+            bool(salon.display_ads and len(salon.galleries) >= 3),
             "Salon has real cover and 3+ gallery photos",
             "Add a cover photo and at least 3 gallery photos",
         ),

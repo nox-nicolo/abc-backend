@@ -164,9 +164,7 @@
 #         owner_name = salon.user.name if salon.user else None
         
 #         salon_cover_url = (salon_url + salon.display_ads) if salon.display_ads else (profile_url + salon.user.profile_picture.file_name) 
-#         if salon.display_ads == 'Not Set':
-#             salon_cover_url =  (profile_url + salon.user.profile_picture.file_name)
-    
+
 #         score = compute_salon_score(salon.title, salon.slogan, q_clean, is_verified)
 
 #         results.append(
@@ -643,7 +641,6 @@ def search_salons(db: Session, q: str, limit: int, current_user_id: str) -> List
             and salon.description
             and account_age_days >= 30
             and salon.display_ads
-            and salon.display_ads != "Not Set"
             and gallery_count >= 3
             and active_services_count >= 3
             and verified_contacts_count >= 2
@@ -664,7 +661,7 @@ def search_salons(db: Session, q: str, limit: int, current_user_id: str) -> List
 
         salon_cover_url = (
             salon_url + salon.display_ads
-            if salon.display_ads and salon.display_ads != "Not Set"
+            if salon.display_ads
             else fallback_profile
         )
 

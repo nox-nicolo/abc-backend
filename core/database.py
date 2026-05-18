@@ -68,6 +68,7 @@
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 # Prefer environment variable in production, fallback to your current URL
 DATABASE_URL = os.getenv(
@@ -84,11 +85,28 @@ if "sslmode=" not in DATABASE_URL:
     separator = "&" if "?" in DATABASE_URL else "?"
     DATABASE_URL = f"{DATABASE_URL}{separator}sslmode=require"
 
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,
-    pool_recycle=300,
-)
+connect_args = {
+    "keepalives": 1,
+    "keepalives_idle": 30,
+    "keepalives_interval": 10,
+    "keepalives_count": 5,
+}
+
+pool_mode = os.getenv("DB_POOL_MODE", "queue").lower()
+engine_kwargs = {
+    "pool_pre_ping": True,
+    "pool_recycle": int(os.getenv("DB_POOL_RECYCLE_SECONDS", "300")),
+    "connect_args": connect_args,
+}
+
+if pool_mode == "null":
+    engine_kwargs["poolclass"] = NullPool
+else:
+    engine_kwargs["pool_size"] = int(os.getenv("DB_POOL_SIZE", "5"))
+    engine_kwargs["max_overflow"] = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+    engine_kwargs["pool_timeout"] = int(os.getenv("DB_POOL_TIMEOUT", "30"))
+
+engine = create_engine(DATABASE_URL, **engine_kwargs)
 
 SessionLocal = sessionmaker(
     autocommit=False,

@@ -22,7 +22,7 @@ _minor_url = f"{BASE_URL}/{ImageDirectories.SERVICE_DIR.value}minor/"
 
 
 def _cover_from_row(display_ads, profile_file_name=None) -> str | None:
-    if display_ads and display_ads != "Not Set":
+    if display_ads:
         return _salon_url + display_ads
     return None
 

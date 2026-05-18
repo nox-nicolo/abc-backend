@@ -54,8 +54,7 @@
 #     if os.path.isfile(path):
 #         try:
 #             os.remove(path)
-#         except Exception as e:
-#             print(f"Error deleting file {path}: {e}")
+#         except Exception:
 
 # async def upload_account_media_(
 #     user_id: str,
@@ -140,6 +139,8 @@ import datetime
 import io
 import os
 import uuid
+import logging
+
 from fastapi import UploadFile, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -150,6 +151,7 @@ from models.auth.user import User
 from models.profile.salon import Salon
 
 
+logger = logging.getLogger(__name__)
 PROFILE_PIC = ImageDirectories.PROFILE_DIR.value
 COVER_PIC = ImageDirectories.SALON_COVER_DIR.value
 
@@ -242,8 +244,8 @@ def delete_old_file(folder: str, filename: str | None):
     path = f"{folder}{filename}"
     try:
         delete_file(path)
-    except Exception as e:
-        print(f"Error deleting R2 file {path}: {e}")
+    except Exception:
+        logger.exception("Failed to delete R2 file %s", path)
 
 
 async def upload_account_media_(

@@ -6,5 +6,3 @@ raw_settings = "{\"visibility\":\"Public\",\"showLikes\":true,\"enableComments\"
 
 # Convert string to dict
 settings_dict = json.loads(raw_settings)
-
-print(settings_dict)

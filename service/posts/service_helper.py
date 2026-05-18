@@ -1,6 +1,7 @@
 # Service Post Helper
 
 from ast import Dict, Set
+import logging
 import os
 import shutil
 import uuid
@@ -14,6 +15,8 @@ from core.r2_config import upload_file
 from models.posts.posts import Hashtag, MediaData, PostHashtag, PostMention, PostSettings
 from pydantic_schemas.posts.create_post import MediaItemSchema, PostSettingsSchema
 from sqlalchemy import func
+
+logger = logging.getLogger(__name__)
 
 # -------------------------------------------------------------------
 # Image Directory
@@ -192,8 +195,7 @@ async def post_settings_inserted(post_id, settings: PostSettingsSchema, db: Sess
 #     try:
 #         with open(file_location, "wb") as buffer:
 #             shutil.copyfileobj(file.file, buffer)
-#     except Exception as e:
-#         print(f"File write failed: {e}")
+#     except Exception:
 #         raise HTTPException(
 #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
 #             detail="Failed to save media file to disk."
@@ -248,8 +250,8 @@ async def upload_media(
 
     try:
         upload_file(file.file, r2_path, content_type=file.content_type)
-    except Exception as e:
-        print(f"R2 upload failed: {e}")
+    except Exception:
+        logger.exception("Failed to upload post media to R2")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to upload media file."

@@ -17,7 +17,6 @@
 
 
 # async def profile_salon(db: Session, user: str):
-#     print(user)
     
 #     # ───────────────── User ─────────────────
 #     user_db = db.query(User).filter(User.id == user).first()

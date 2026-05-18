@@ -11,13 +11,10 @@
 
 # async def user_select_services_(user_id: str, db: Session):
 #     # 1. Fetch the user's selection record
-#     print(user_id)
 #     selection = db.query(UserSelectServices).filter(
 #         UserSelectServices.user_id == user_id
 #     ).first()
     
-#     print(selection.services)
-
 #     if not selection or not selection.services:
 #         raise HTTPException(status_code=404, detail="No services selected by user")
 
@@ -26,7 +23,6 @@
 #     detailed_services = db.query(Services).filter(
 #         Services.id.in_(selection.services)
 #     ).all()
-#     print(detailed_services)
 #     # 3. Map the DB results to your Pydantic Schema
 #     # Note: Using s.service_picture to match your DB column name
 #     results = [

@@ -71,8 +71,7 @@
 #         for item in to_delete:
 #             try:
 #                 _delete_r2_file(item.file_name)
-#             except Exception as e:
-#                 print(f"Error deleting R2 file: {e}")
+#             except Exception:
 #             db.delete(item)
 
 #         db.flush()
@@ -105,8 +104,7 @@
 #     #         )
 #     #         db.add(gallery_item)
 #     #         new_items.append(gallery_item)
-#     #     except Exception as e:
-#     #         print(f"Error saving file: {e}")
+#     #     except Exception:
 
 #     # try:
 #     #     db.commit()
@@ -140,8 +138,7 @@
 #             db.add(gallery_item)
 #             new_items.append(gallery_item)
 
-#         except Exception as e:
-#             print(f"Error uploading file to R2: {e}")
+#         except Exception:
 
 #     try:
 #         db.commit()
@@ -161,6 +158,7 @@
 
 
 
+import logging
 import os
 from uuid import uuid4
 from typing import List, Optional
@@ -172,6 +170,7 @@ from core.enumeration import ImageDirectories
 from models.profile.salon import Salon, SalonGallery
 
 
+logger = logging.getLogger(__name__)
 MAX_GALLERY_IMAGES = 10
 GALLERY_DIR = ImageDirectories.SALON_GALLERY_DIR.value
 GALLERY_URL = f"{BASE_URL}/{GALLERY_DIR}"
@@ -204,8 +203,8 @@ async def manage_salon_gallery_(
         for item in to_delete:
             try:
                 _delete_r2_file(item.file_name)
-            except Exception as e:
-                print(f"Error deleting R2 file: {e}")
+            except Exception:
+                logger.exception("Failed to delete gallery image from R2")
             db.delete(item)
 
         db.flush()
@@ -235,8 +234,8 @@ async def manage_salon_gallery_(
             )
             db.add(gallery_item)
 
-        except Exception as e:
-            print(f"Error uploading file to R2: {e}")
+        except Exception:
+            logger.exception("Failed to upload gallery image to R2")
             raise HTTPException(status_code=500, detail="Failed to upload gallery image")
 
     try:

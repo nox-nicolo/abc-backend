@@ -123,7 +123,7 @@ def verify_user(code: str, db: Session = Depends(get_db)):
                 title=f"{user.username}'s Salon" if user.username else "My Salon",
                 slogan="Your beauty, our duty",
                 description="Welcome to our salon!",
-                display_ads="Not Set",
+                display_ads=None,
                 profile_completion=0.0,
             )
             db.add(salon)

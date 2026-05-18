@@ -1,10 +1,12 @@
-
+import logging
 import os
 
 from fastapi.responses import JSONResponse
 from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
 
 # send code via mail
+logger = logging.getLogger(__name__)
+
 conf = ConnectionConfig(
     MAIL_USERNAME=os.getenv("MAIL_USERNAME", "nicolooseph@gmail.com"),
     MAIL_PASSWORD=os.getenv("MAIL_PASSWORD", "vnkd vrcx gflf yhdf"),
@@ -32,8 +34,8 @@ def enqueue_verification_email(code: str, email: str) -> bool:
 
         send_verification_email.delay(code=code, email=email)
         return True
-    except Exception as e:
-        print(f"Error queueing verification email: {e}")
+    except Exception:
+        logger.exception("Failed to queue verification email")
         return False
 
 
@@ -76,8 +78,8 @@ async def mail_send(code: str, email: str):
             status_code=200,
             content={"message": "Email has been sent"}
         )
-    except Exception as e:  # Catch potential email sending errors
-        print(f"Error sending email: {e}")
+    except Exception:  # Catch potential email sending errors
+        logger.exception("Failed to send verification email")
         return JSONResponse(
             status_code=500,
             content={"message": "Failed to send email"}

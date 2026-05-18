@@ -194,12 +194,10 @@
 #         db.commit()
         
 #         if flag:
-#             print(prev_filename)
 #         # remove the previos profile picture
 #         # leave the default profile picture
 #         # the rest remove
         
-#             print('here')
 #             if not (prev_filename == 'user.png'):
                 
 #                 file_location = os.path.join(UPLOAD_DIR, prev_filename)
@@ -223,7 +221,6 @@
 
 # async def selected_(selected: ServiceListRequest, user_id: str, db: Session = Depends(get_db)):
     
-#     # print(selected.service)
 #     # check if user exist 
 #     user = db.query(User).filter(User.id == user_id).first()
 
@@ -281,6 +278,7 @@
 
 
 from datetime import datetime
+import logging
 import uuid
 import os
 from sqlalchemy.orm import Session, joinedload
@@ -299,6 +297,8 @@ from pydantic_schemas.set_account.set_account import (
     UsernameCheckRequest,
 )
 from service.notification.notification import create_welcome_notification
+
+logger = logging.getLogger(__name__)
 
 PROFILE_IMAGE_BASE = f"{BASE_URL}/{ImageDirectories.PROFILE_DIR.value}"
 
@@ -427,8 +427,8 @@ async def upload_account_(
             old_r2_path = f"{ImageDirectories.PROFILE_DIR.value}{prev_filename}"
             try:
                 delete_file(old_r2_path)
-            except Exception as e:
-                print(f"Failed to delete old profile image from R2: {e}")
+            except Exception:
+                logger.exception("Failed to delete old profile image from R2")
 
         return {
             "message": "Profile updated successfuly"

@@ -29,9 +29,7 @@ async def setup_account(db: Session = Depends(get_db), current_user: TokenData =
 @setup.post('/check_username')
 async def try_username(request: UsernameCheckRequest, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_user)):
     user_id = current_user.user_id
-    
-    print(user_id)
-    
+
     try:
         return await check_username(request, user_id,  db)
     except HTTPException as e:

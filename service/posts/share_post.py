@@ -30,8 +30,6 @@ async def count_share_(id: str, db: Session = Depends(get_db)):
 
 
 async def post_share_(share: PostShareRequestSchema,  db: Session = Depends(get_db)):
-    print(share)
-    
     # check if the post exist
     the_post = db.query(Post).filter(Post.id == share.post_id).first()
     
@@ -42,7 +40,6 @@ async def post_share_(share: PostShareRequestSchema,  db: Session = Depends(get_
     # for every user shared write to the table ..
     if len(share.shared_user) < 1:
         raise HTTPException(status_code=status.HTTP_204_NO_CONTENT, detail = 'No User selected')
-    print('continue')
     for user in share.shared_user:
         insert = PostShare(
             id = str(uuid.uuid4()),
