@@ -15,6 +15,7 @@ from pydantic_schemas.profile.salon import  SalonGalleryResponse, SalonProfileRe
 from pydantic_schemas.profile.salon_config_service import SalonServiceConfigIn, SalonServiceConfigOut
 from pydantic_schemas.profile.salon_stylists import SalonStylistCreate, SalonStylistListOut, SalonStylistOut, SalonStylistOutSimple, SalonStylistUpdate, UserSearchListOut
 from pydantic_schemas.profile.salon_view import SalonFollowersResponseSchema, SalonViewProfileResponseSchema
+from pydantic_schemas.profile.salon_activity import ActivityFeedResponse
 from pydantic_schemas.profile.settings import AccountMediaResponse, SalonAvailabilityOverrideIn, SalonAvailabilityOverrideListResponse, SalonAvailabilityOverrideOut, SalonContactLocationResponse, SalonContactUpdateRequest, SalonProfileResponse, SalonProfileUpdateRequest, SalonWorkingHoursResponse, SalonWorkingHoursUpdateRequest
 from pydantic_schemas.profile.top_salon import TopSalonResponse
 from service.auth.JWT.oauth2 import get_current_user
@@ -64,7 +65,11 @@ async def salon_profile(
 # -------------------------------------------------------------------
 # Salon Activity Feed
 # -------------------------------------------------------------------
-@profile.get("/salon/activity", status_code=status.HTTP_200_OK)
+@profile.get(
+    "/salon/activity",
+    response_model=ActivityFeedResponse,
+    status_code=status.HTTP_200_OK,
+)
 async def salon_activity_feed_owner(
     limit: int = Query(30, ge=1, le=50),
     cursor: str | None = Query(None),
@@ -81,7 +86,11 @@ async def salon_activity_feed_owner(
     )
 
 
-@profile.get("/salon/{salon_id}/activity", status_code=status.HTTP_200_OK)
+@profile.get(
+    "/salon/{salon_id}/activity",
+    response_model=ActivityFeedResponse,
+    status_code=status.HTTP_200_OK,
+)
 async def salon_activity_feed_by_id(
     salon_id: str,
     limit: int = Query(30, ge=1, le=50),
@@ -337,10 +346,16 @@ async def fetch_top_salons(
     limit: int = Query(10, le=20),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
 ):
     try:
         # Just call the service and return
-        return get_top_salons(db, limit, offset)
+        return get_top_salons(
+            db,
+            limit,
+            offset,
+            exclude_user_id=current_user.user_id,
+        )
         
     except HTTPException as e:
         return JSONResponse(

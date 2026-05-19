@@ -155,7 +155,12 @@ PROFILE_PIC = f"{BASE_URL}/{ImageDirectories.PROFILE_DIR.value}"
 COVER_PIC = f"{BASE_URL}/{ImageDirectories.SALON_COVER_DIR.value}"
 
 
-def get_top_salons(db: Session, limit: int = 10, offset: int = 0):
+def get_top_salons(
+    db: Session,
+    limit: int = 10,
+    offset: int = 0,
+    exclude_user_id: str | None = None,
+):
     followers_sq = (
         db.query(
             SalonFollower.salon_id.label("salon_id"),
@@ -209,9 +214,7 @@ def get_top_salons(db: Session, limit: int = 10, offset: int = 0):
         + profile_completion * 15
     ).label("score")
 
-    total = db.query(func.count(Salon.id)).scalar() or 0
-
-    rows = (
+    query = (
         db.query(
             Salon.id,
             Salon.title,
@@ -228,11 +231,13 @@ def get_top_salons(db: Session, limit: int = 10, offset: int = 0):
         .join(User, User.id == Salon.user_id)
         .outerjoin(ProfilePicture, ProfilePicture.user_id == User.id)
         .outerjoin(SalonLocation, SalonLocation.salon_id == Salon.id)
-        .order_by(score.desc(), Salon.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
     )
+    if exclude_user_id:
+        query = query.filter(Salon.user_id != exclude_user_id)
+
+    total = query.count()
+
+    rows = query.order_by(score.desc(), Salon.created_at.desc()).offset(offset).limit(limit).all()
 
     results = []
     for row in rows:

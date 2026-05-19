@@ -55,12 +55,13 @@ def _truncate(text: Optional[str]) -> Optional[str]:
 
 
 def _actor_schema(user: User) -> NotificationActor:
+    salon = user.salon
     return NotificationActor(
         id=user.id,
-        username=user.username,
+        username=salon.title if salon else user.username,
         profile_picture=_avatar_url(user),
         role=user.role,
-        salon_id=user.salon.id if user.salon else None,
+        salon_id=salon.id if salon else None,
     )
 
 

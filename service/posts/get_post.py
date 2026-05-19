@@ -26,7 +26,7 @@ from models.posts.posts import (
 )
 
 from models.auth.user import User
-from models.profile.salon import SalonFollower, Salon, SalonLocation, SalonServiceBenefit, SalonServicePrice, SalonServiceProduct, SponsoredSalon
+from models.profile.salon import SalonFollower, Salon, SalonLocation, SalonServiceBenefit, SalonServicePrice, SalonServiceProduct, SalonStylist, SponsoredSalon, StylistService
 from pydantic_schemas.posts.single_post import BookingState, EngagementState, OtherPostsSection, PostPreview, PriceRange, ReviewSection, ServiceProduct, ServiceSection, SimilarSection, SinglePostResponse, SponsoredSalonSection, StylistSection
 from service.trending.logic import apply_trending_logic
 from service.posts.repost import can_share_post
@@ -981,44 +981,53 @@ def _build_other_posts_section(
 # Stylist
 def _build_stylists_section(
     db: Session,
-    salon_id: Optional[str],
+    salon_service_price_id: Optional[str],
 ) -> List[StylistSection]:
 
-    if not salon_id:
+    if not salon_service_price_id:
         return []
 
-    salon = db.query(Salon).filter(Salon.id == salon_id).first()
-    if not salon:
-        return []
-
-    owner = (
-        db.query(User)
-        .options(joinedload(User.profile_picture))
-        .filter(User.id == salon.user_id)
-        .first()
+    assigned = (
+        db.query(StylistService)
+        .join(SalonStylist)
+        .options(
+            joinedload(StylistService.stylist)
+            .joinedload(SalonStylist.user)
+            .joinedload(User.profile_picture)
+        )
+        .filter(
+            StylistService.salon_service_price_id == salon_service_price_id,
+            SalonStylist.is_active.is_(True),
+        )
+        .order_by(SalonStylist.is_owner.asc(), SalonStylist.created_at.asc())
+        .all()
     )
 
-    if not owner:
-        return []
+    stylists: List[StylistSection] = []
+    seen: set[str] = set()
 
-    return [
-        StylistSection(
-            id=owner.id,
-            name=owner.username,
-            # avatar=(
-            #     f"{PROFILE_URL}{owner.profile_picture.file_name}"
-            #     if owner.profile_picture
-            #     else None
-            # ),
-            avatar=(
-                build_profile_url(owner.profile_picture.file_name)
-                if owner.profile_picture
-                else None
-            ),
-            title=None,
-            rating=None,
+    for assignment in assigned:
+        stylist = assignment.stylist
+        user = stylist.user if stylist else None
+        if not stylist or not user or stylist.id in seen:
+            continue
+        seen.add(stylist.id)
+
+        stylists.append(
+            StylistSection(
+                id=stylist.id,
+                name=user.name or user.username,
+                avatar=(
+                    build_profile_url(user.profile_picture.file_name)
+                    if user.profile_picture
+                    else None
+                ),
+                title=stylist.title,
+                rating=None,
+            )
         )
-    ]
+
+    return stylists
 
 
 
@@ -1167,11 +1176,9 @@ async def get_single_post_view_(
         post=post,
     )
     
-    salon_id = post.user.salon.id if post.user and post.user.salon else None
-
     stylists = _build_stylists_section(
         db=db,
-        salon_id=salon_id,
+        salon_service_price_id=service.id if service.id else None,
     )
 
 

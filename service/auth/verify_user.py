@@ -16,6 +16,7 @@ from service.auth.JWT.JWT_token import (
     create_refresh_token,
 )
 from service.auth.send_code import enqueue_verification_email, mail_send
+from service.notification.notification import create_welcome_notification
 
 
 # Generate a random 6-digit numeric code
@@ -130,6 +131,8 @@ def verify_user(code: str, db: Session = Depends(get_db)):
 
     db.commit()
     db.refresh(user)
+
+    create_welcome_notification(db=db, user_id=user.id)
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(

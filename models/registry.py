@@ -8,6 +8,7 @@ import models.auth.customer_profile  # noqa: F401
 import models.auth.profile_picture  # noqa: F401
 import models.auth.refresh_token  # noqa: F401
 import models.auth.user  # noqa: F401
+import models.ads  # noqa: F401
 import models.auth.verification  # noqa: F401
 import models.booking.booking  # noqa: F401
 import models.chat  # noqa: F401

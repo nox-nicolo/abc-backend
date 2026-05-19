@@ -101,7 +101,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
 from core.enumeration import PostStatus, ImageDirectories
@@ -147,19 +147,27 @@ async def get_hashtag_grid_(
         )
 
     post_count = (
-        db.query(func.count(PostHashtag.id))
-        .filter(PostHashtag.hashtag_id == hashtag_id)
+        db.query(func.count(func.distinct(Post.id)))
+        .join(PostHashtag, PostHashtag.post_id == Post.id)
+        .filter(
+            PostHashtag.hashtag_id == hashtag_id,
+            Post.status == PostStatus.PUBLISHED,
+            Post.media_items.any(),
+        )
         .scalar()
         or 0
     )
 
     query = (
         db.query(Post)
+        .options(joinedload(Post.media_items))
         .join(PostHashtag, PostHashtag.post_id == Post.id)
         .filter(
             PostHashtag.hashtag_id == hashtag_id,
-            Post.status == PostStatus.PUBLISHED.name,
+            Post.status == PostStatus.PUBLISHED,
+            Post.media_items.any(),
         )
+        .distinct(Post.id)
         .order_by(Post.created_at.desc())
     )
 
@@ -171,9 +179,6 @@ async def get_hashtag_grid_(
     items: List[Dict[str, Any]] = []
 
     for post in posts:
-        if not post.media_items:
-            continue
-
         media = post.media_items[0]
 
         items.append(

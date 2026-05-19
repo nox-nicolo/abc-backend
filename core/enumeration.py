@@ -60,6 +60,19 @@ class MediaState(PyEnum):
     FAILED = "failed"  # Media processing failed
     PROCESSED = "processed"  # Media has been processed successfully
     DELETED = "deleted"  # Media has been deleted
+
+
+class AdPlacement(PyEnum):
+    HOME_FEED = "home_feed"
+    SEARCH = "search"
+    POST_VIEW = "post_view"
+
+
+class AdStatus(PyEnum):
+    DRAFT = "draft"
+    ACTIVE = "active"
+    PAUSED = "paused"
+    ARCHIVED = "archived"
     
     
 

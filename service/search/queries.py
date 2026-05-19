@@ -414,10 +414,10 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_, func
 
 from core.r2_config import BASE_URL
-from core.enumeration import BookingStatus, ImageDirectories, ServiceCreatedStatus
+from core.enumeration import BookingStatus, ImageDirectories, PostStatus, ServiceCreatedStatus
 from models.auth.user import User
 from models.booking.booking import Booking, ServiceReview
-from models.posts.posts import Hashtag, Post
+from models.posts.posts import Hashtag, Post, PostHashtag
 from models.profile.salon import (
     Salon,
     SalonContact,
@@ -533,6 +533,42 @@ def search_users(db: Session, q: str, limit: int, current_user_id: str) -> List[
         )
 
     return results
+
+
+def search_share_users(db: Session, q: str, limit: int, current_user_id: str) -> List[SearchUserResult]:
+    q_clean = clean_query(q)
+    if not q_clean:
+        return []
+
+    users = (
+        db.query(User)
+        .options(joinedload(User.profile_picture))
+        .filter(
+            User.id != current_user_id,
+            or_(
+                User.username.ilike(f"%{q_clean}%"),
+                func.coalesce(User.name, "").ilike(f"%{q_clean}%"),
+            ),
+        )
+        .limit(limit)
+        .all()
+    )
+
+    return [
+        SearchUserResult(
+            id=user.id,
+            entity="user",
+            username=user.username,
+            full_name=user.name,
+            avatar_url=(
+                profile_url + user.profile_picture.file_name
+                if user.profile_picture
+                else None
+            ),
+            score=compute_user_score(user.username, user.name, q_clean),
+        )
+        for user in users
+    ]
 
 
 # ---------------------------
@@ -693,24 +729,41 @@ def search_hashtags(db: Session, q: str, limit: int) -> List[SearchHashtagResult
     if not q_clean:
         return []
 
-    hashtags = (
-        db.query(Hashtag)
-        .options(joinedload(Hashtag.post_hashtags))
+    rows = (
+        db.query(
+            Hashtag.id,
+            Hashtag.name,
+            func.count(func.distinct(Post.id)).label("post_count"),
+        )
+        .join(PostHashtag, PostHashtag.hashtag_id == Hashtag.id)
+        .join(Post, Post.id == PostHashtag.post_id)
         .filter(Hashtag.name.ilike(f"%{q_clean}%"))
+        .filter(Post.status == PostStatus.PUBLISHED, Post.media_items.any())
+        .group_by(Hashtag.id, Hashtag.name)
+        .order_by(func.count(func.distinct(Post.id)).desc())
         .limit(limit)
         .all()
     )
 
     results: List[SearchHashtagResult] = []
-    for hashtag in hashtags:
-        post_count = len(hashtag.post_hashtags or [])
-        score = compute_hashtag_score(hashtag.name, q_clean, post_count)
+    seen_names: set[str] = set()
+    for row in rows:
+        normalized_name = (row.name or "").strip().lower()
+        if normalized_name in seen_names:
+            continue
+        seen_names.add(normalized_name)
+
+        post_count = int(row.post_count or 0)
+        if post_count <= 0:
+            continue
+
+        score = compute_hashtag_score(row.name, q_clean, post_count)
 
         results.append(
             SearchHashtagResult(
-                id=hashtag.id,
+                id=row.id,
                 entity="hashtag",
-                tag=hashtag.name,
+                tag=row.name,
                 post_count=post_count,
                 score=score,
             )

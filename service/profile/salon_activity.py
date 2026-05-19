@@ -8,7 +8,7 @@ Viewer-aware: booking events are owner-only (private). Follower / review /
 post-like events are public-safe and returned to everyone.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 
 from fastapi import HTTPException
@@ -41,6 +41,27 @@ def _actor_dict(user: User) -> dict:
     }
 
 
+def _as_utc(value: datetime | None) -> datetime:
+    if value is None:
+        return datetime.now(timezone.utc)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _status_value(status) -> str:
+    return getattr(status, "value", str(status))
+
+
+def _stars(value) -> str:
+    try:
+        rating = int(value or 0)
+    except (TypeError, ValueError):
+        rating = 0
+    rating = max(0, min(5, rating))
+    return f"{'★' * rating}{'☆' * (5 - rating)}"
+
+
 async def get_salon_activity(
     salon_id: str,
     viewer_user_id: str | None,
@@ -64,7 +85,7 @@ async def get_salon_activity(
     cursor_dt: datetime | None = None
     if cursor:
         try:
-            cursor_dt = datetime.fromisoformat(cursor)
+            cursor_dt = _as_utc(datetime.fromisoformat(cursor))
         except ValueError:
             cursor_dt = None
 
@@ -85,11 +106,12 @@ async def get_salon_activity(
             actor = _actor_dict(b.customer) if b.customer else None
             name = actor["name"] if actor else "Someone"
             svc = b.service_name_snapshot or "a service"
+            booking_status = _status_value(b.status)
 
-            if b.status.value == "completed":
+            if booking_status == "completed":
                 evt_type = "booking_completed"
                 msg = f"{name} completed their booking for {svc}"
-            elif b.status.value == "cancelled":
+            elif booking_status == "cancelled":
                 evt_type = "booking_cancelled"
                 msg = f"Booking for {svc} by {name} was cancelled"
             else:
@@ -101,7 +123,7 @@ async def get_salon_activity(
                 "type": evt_type,
                 "message": msg,
                 "actor": actor,
-                "created_at": b.created_at,
+                "created_at": _as_utc(b.created_at),
                 "ref_id": b.id,
             })
 
@@ -123,7 +145,7 @@ async def get_salon_activity(
             "type": "follower_new",
             "message": f"{name} started following",
             "actor": actor,
-            "created_at": f.created_at,
+            "created_at": _as_utc(f.created_at),
             "ref_id": f.user_id if f.user else None,
         })
 
@@ -140,25 +162,24 @@ async def get_salon_activity(
     for r in reviews:
         actor = _actor_dict(r.user) if r.user else None
         name = actor["name"] if actor else "Someone"
-        stars = f"{'★' * r.rating}{'☆' * (5 - r.rating)}"
+        stars = _stars(r.rating)
         events.append({
             "id": f"rv_{r.id}",
             "type": "review_new",
             "message": f"{name} left a {stars} review",
             "actor": actor,
-            "created_at": r.created_at,
+            "created_at": _as_utc(r.created_at),
             "ref_id": r.booking_id,
         })
 
     # ── 4. Post likes (public) ──────────────────────────────────
-    salon_user_posts = db.query(Post.id).filter(Post.user_id == owner_user_id).subquery()
-
     lq = (
         db.query(PostLike)
         .options(joinedload(PostLike.user).joinedload(User.profile_picture))
+        .join(Post, Post.id == PostLike.post_id)
         .filter(
-            PostLike.post_id.in_(salon_user_posts),
-            PostLike.liked == True,
+            Post.user_id == owner_user_id,
+            PostLike.liked.is_(True),
             PostLike.user_id != owner_user_id,  # exclude self-likes
         )
     )
@@ -174,7 +195,7 @@ async def get_salon_activity(
             "type": "post_like",
             "message": f"{name} liked a post",
             "actor": actor,
-            "created_at": lk.created_at,
+            "created_at": _as_utc(lk.created_at),
             "ref_id": lk.post_id,
         })
 
@@ -186,7 +207,7 @@ async def get_salon_activity(
     if len(events) == limit:
         last_dt = events[-1]["created_at"]
         if isinstance(last_dt, datetime):
-            next_cursor = last_dt.isoformat()
+            next_cursor = _as_utc(last_dt).isoformat()
 
     return {
         "items": events,

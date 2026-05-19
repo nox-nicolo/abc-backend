@@ -12,6 +12,7 @@ from service.auth.JWT.oauth2 import get_current_user
 from service.search.discover import get_nearby_salons, get_top_salons, get_trending_styles
 from service.search.search import search_
 from service.search.hashtag import get_hashtag_grid_
+from service.search.queries import search_share_users
 
 search = APIRouter(
     prefix="/search",
@@ -55,6 +56,27 @@ async def global_search(
         cursor=cursor,
         db=db,
         user_id=current_user.user_id,
+    )
+
+
+@search.get(
+    "/users",
+    response_model=SearchResponse,
+    summary="Search people for post sharing",
+)
+async def users_for_sharing(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(20, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    return SearchResponse(
+        results=search_share_users(
+            db=db,
+            q=q,
+            limit=limit,
+            current_user_id=current_user.user_id,
+        )
     )
     
 

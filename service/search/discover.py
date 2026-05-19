@@ -154,6 +154,7 @@ def get_top_salons(
         .join(User, User.id == Salon.user_id)
         .outerjoin(ProfilePicture, ProfilePicture.user_id == User.id)
         .outerjoin(SalonLocation, SalonLocation.salon_id == Salon.id)
+        .filter(Salon.user_id != current_user_id)
         .group_by(
             Salon.id,
             Salon.title,
