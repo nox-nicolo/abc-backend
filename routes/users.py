@@ -11,6 +11,20 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from models.auth.user import User
 from pydantic_schemas.auth.jwt_token import TokenData
+from pydantic_schemas.account.settings import AccountSettingsResponse, AccountSettingsUpdate
+from pydantic_schemas.account.audit import AuditEventListResponse
+from pydantic_schemas.account.profile_settings import (
+    AccountDataExport,
+    CustomerBeautyPreferences,
+    CustomerBlockedAccounts,
+    CustomerProfilePreviewVisibility,
+    CustomerRecommendationControls,
+    SalonBookingRules,
+    SalonCampaignDrafts,
+    SalonCampaignHistory,
+    SalonTeamPermissions,
+)
+from pydantic_schemas.account.profile_completion import ProfileCompletionResponse
 from pydantic_schemas.customer.following import MyFollowingResponse
 from pydantic_schemas.customer.profile import CustomerProfileResponse, CustomerProfileUpdate
 from pydantic_schemas.mute import MuteListResponse, MuteResponse, MuteTargetType
@@ -21,6 +35,28 @@ from pydantic_schemas.profile.notification_preferences import (
 from pydantic_schemas.users.user_select_service import UserSelectServicesResponse
 from pydantic_schemas.users.device_token import DeviceTokenListResponse, DeviceTokenResponse, DeviceTokenUpsert
 from service.auth.JWT.oauth2 import get_current_user
+from service.account.settings import get_account_settings, update_account_settings
+from service.account.audit import list_audit_events, record_audit_event
+from service.account.profile_settings import (
+    get_customer_account_data_export,
+    get_customer_beauty_preferences,
+    get_customer_blocked_accounts,
+    get_customer_profile_preview_visibility,
+    get_customer_recommendation_controls,
+    get_salon_booking_rules,
+    get_salon_campaign_drafts,
+    get_salon_campaign_history,
+    get_salon_team_permissions,
+    update_customer_beauty_preferences,
+    update_customer_blocked_accounts,
+    update_customer_profile_preview_visibility,
+    update_customer_recommendation_controls,
+    update_salon_booking_rules,
+    update_salon_campaign_drafts,
+    update_salon_campaign_history,
+    update_salon_team_permissions,
+)
+from service.account.profile_completion import get_profile_completion
 from service.customer.following import get_my_following
 from service.customer.profile import get_customer_profile_, update_customer_profile_
 from service.search.users import recommend_user, search_user
@@ -61,7 +97,7 @@ async def get_my_profile(
     db: Session = Depends(get_db),
 ):
     try:
-        return get_customer_profile_(current_user.user_id, db)
+        return get_customer_profile_(current_user.user_id, db, viewer_user_id=current_user.user_id)
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
     except Exception as e:
@@ -75,7 +111,16 @@ async def update_my_profile(
     db: Session = Depends(get_db),
 ):
     try:
-        return update_customer_profile_(current_user.user_id, data, db)
+        result = update_customer_profile_(current_user.user_id, data, db)
+        record_audit_event(
+            db,
+            user_id=current_user.user_id,
+            event_type="profile_updated",
+            title="Profile updated",
+            description="Customer profile details were updated.",
+            metadata={"section": "customer_profile"},
+        )
+        return result
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
     except Exception as e:
@@ -158,16 +203,25 @@ def delete_my_device_token(
 @users.get("/me/mutes", response_model=MuteListResponse)
 def get_my_mutes(
     target_type: MuteTargetType | None = Query(None),
+    q: str | None = Query(None, max_length=120),
+    sort: str = Query("newest", pattern="^(newest|type)$"),
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return list_mutes(db=db, user_id=current_user.user_id, target_type=target_type)
+    return list_mutes(
+        db=db,
+        user_id=current_user.user_id,
+        target_type=target_type,
+        q=q,
+        sort=sort,
+    )
 
 
 @users.post("/me/mutes/{target_type}/{target_id}", response_model=MuteResponse, status_code=200)
 def mute_target_route(
     target_type: MuteTargetType,
     target_id: str,
+    reason: str | None = Query(None, max_length=255),
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -176,6 +230,7 @@ def mute_target_route(
         user_id=current_user.user_id,
         target_type=target_type,
         target_id=target_id,
+        reason=reason,
     )
 
 
@@ -250,6 +305,233 @@ def save_or_unsave_style(
 
 
 # ---------------------------------------------------
+# Synced account settings
+# ---------------------------------------------------
+
+@users.get(
+    "/me/account-settings",
+    response_model=AccountSettingsResponse,
+)
+def get_my_account_settings(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return get_account_settings(db, current_user.user_id)
+
+
+@users.patch(
+    "/me/account-settings",
+    response_model=AccountSettingsResponse,
+)
+def update_my_account_settings(
+    payload: AccountSettingsUpdate,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return update_account_settings(db, current_user.user_id, payload)
+
+
+@users.get("/me/audit-log", response_model=AuditEventListResponse)
+def get_my_audit_log(
+    limit: int = Query(30, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return list_audit_events(
+        db,
+        user_id=current_user.user_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+def _current_user_row(db: Session, current_user: TokenData) -> User:
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    return user
+
+
+@users.get("/me/customer/beauty-preferences", response_model=CustomerBeautyPreferences)
+def get_my_customer_beauty_preferences(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return get_customer_beauty_preferences(db, current_user.user_id)
+
+
+@users.patch("/me/customer/beauty-preferences", response_model=CustomerBeautyPreferences)
+def update_my_customer_beauty_preferences(
+    payload: CustomerBeautyPreferences,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return update_customer_beauty_preferences(db, current_user.user_id, payload)
+
+
+@users.get("/me/customer/recommendation-controls", response_model=CustomerRecommendationControls)
+def get_my_customer_recommendation_controls(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return get_customer_recommendation_controls(db, current_user.user_id)
+
+
+@users.patch("/me/customer/recommendation-controls", response_model=CustomerRecommendationControls)
+def update_my_customer_recommendation_controls(
+    payload: CustomerRecommendationControls,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return update_customer_recommendation_controls(db, current_user.user_id, payload)
+
+
+@users.get("/me/customer/profile-preview-visibility", response_model=CustomerProfilePreviewVisibility)
+def get_my_customer_profile_preview_visibility(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return get_customer_profile_preview_visibility(db, current_user.user_id)
+
+
+@users.patch("/me/customer/profile-preview-visibility", response_model=CustomerProfilePreviewVisibility)
+def update_my_customer_profile_preview_visibility(
+    payload: CustomerProfilePreviewVisibility,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return update_customer_profile_preview_visibility(db, current_user.user_id, payload)
+
+
+@users.get("/me/customer/blocked-accounts", response_model=CustomerBlockedAccounts)
+def get_my_customer_blocked_accounts(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return get_customer_blocked_accounts(db, current_user.user_id)
+
+
+@users.put("/me/customer/blocked-accounts", response_model=CustomerBlockedAccounts)
+def update_my_customer_blocked_accounts(
+    payload: CustomerBlockedAccounts,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return update_customer_blocked_accounts(db, current_user.user_id, payload)
+
+
+@users.get("/me/customer/account-data", response_model=AccountDataExport)
+def export_my_customer_account_data(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return get_customer_account_data_export(db, _current_user_row(db, current_user))
+
+
+@users.get("/me/profile-completion", response_model=ProfileCompletionResponse)
+def get_my_profile_completion(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return get_profile_completion(db, _current_user_row(db, current_user))
+
+
+@users.get("/me/salon/booking-rules", response_model=SalonBookingRules)
+def get_my_salon_booking_rules(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return get_salon_booking_rules(db, _current_user_row(db, current_user))
+
+
+@users.patch("/me/salon/booking-rules", response_model=SalonBookingRules)
+def update_my_salon_booking_rules(
+    payload: SalonBookingRules,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user = _current_user_row(db, current_user)
+    result = update_salon_booking_rules(db, user, payload)
+    record_audit_event(
+        db,
+        user_id=user.id,
+        event_type="booking_rules_changed",
+        title="Booking rules changed",
+        description="Salon booking rules were updated.",
+        metadata={"section": "salon_booking_rules"},
+    )
+    return result
+
+
+@users.get("/me/salon/campaign-drafts", response_model=SalonCampaignDrafts)
+def get_my_salon_campaign_drafts(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return get_salon_campaign_drafts(db, _current_user_row(db, current_user))
+
+
+@users.put("/me/salon/campaign-drafts", response_model=SalonCampaignDrafts)
+def update_my_salon_campaign_drafts(
+    payload: SalonCampaignDrafts,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user = _current_user_row(db, current_user)
+    before = get_salon_campaign_drafts(db, user)
+    result = update_salon_campaign_drafts(db, user, payload)
+    event_title = "Campaign drafts updated"
+    event_type = "campaign_drafts_updated"
+    if len(result.drafts) > len(before.drafts):
+        event_title = "Campaign draft created"
+        event_type = "campaign_draft_created"
+    record_audit_event(
+        db,
+        user_id=user.id,
+        event_type=event_type,
+        title=event_title,
+        description="Salon campaign draft list changed.",
+        metadata={"draft_count": len(result.drafts)},
+    )
+    return result
+
+
+@users.get("/me/salon/campaign-history", response_model=SalonCampaignHistory)
+def get_my_salon_campaign_history(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return get_salon_campaign_history(db, _current_user_row(db, current_user))
+
+
+@users.put("/me/salon/campaign-history", response_model=SalonCampaignHistory)
+def update_my_salon_campaign_history(
+    payload: SalonCampaignHistory,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return update_salon_campaign_history(db, _current_user_row(db, current_user), payload)
+
+
+@users.get("/me/salon/team-permissions", response_model=SalonTeamPermissions)
+def get_my_salon_team_permissions(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return get_salon_team_permissions(db, _current_user_row(db, current_user))
+
+
+@users.put("/me/salon/team-permissions", response_model=SalonTeamPermissions)
+def update_my_salon_team_permissions(
+    payload: SalonTeamPermissions,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return update_salon_team_permissions(db, _current_user_row(db, current_user), payload)
+
+
+# ---------------------------------------------------
 # Notification Preferences (booking reminders)
 # ---------------------------------------------------
 
@@ -301,7 +583,7 @@ async def get_user_profile(
     db: Session = Depends(get_db),
 ):
     try:
-        return get_customer_profile_(user_id, db)
+        return get_customer_profile_(user_id, db, viewer_user_id=current_user.user_id)
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
     except Exception as e:

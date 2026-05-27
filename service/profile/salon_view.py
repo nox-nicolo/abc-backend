@@ -347,6 +347,8 @@ from models.profile.salon import (
     SalonStylist,
     StylistService,
 )
+from service.profile.insights import record_salon_profile_view
+from service.account.enforcement import is_blocked_between
 
 
 PROFILE_IMAGE_BASE = f"{BASE_URL}/{ImageDirectories.PROFILE_DIR.value}"
@@ -520,6 +522,7 @@ async def view_salon_profile(
         raise HTTPException(status_code=404, detail="Salon not found")
 
     owner: User = salon.user
+    record_salon_profile_view(db=db, salon_id=salon.id, user_id=viewer_id)
 
     is_following = False
     notifications_enabled = False
@@ -528,6 +531,9 @@ async def view_salon_profile(
     is_saved = False
 
     if viewer_id and not is_owner:
+        if is_blocked_between(db, viewer_id, salon.user_id):
+            raise HTTPException(status_code=404, detail="Salon not found")
+
         follow = (
             db.query(SalonFollower)
             .filter(
@@ -580,13 +586,14 @@ async def view_salon_profile(
 
     gallery_items = []
     for index, g in enumerate(
-        sorted(salon.galleries, key=lambda x: x.created_at), start=1
+        sorted(salon.galleries, key=lambda x: (x.position, x.created_at)), start=1
     ):
         gallery_items.append(
             {
                 "id": g.id,
                 "image_url": f"{SALON_GALLERY_BASE}{g.file_name}",
-                "order": index,
+                "category": g.category,
+                "order": g.position if g.position is not None else index,
             }
         )
 

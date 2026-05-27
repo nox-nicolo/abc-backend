@@ -117,6 +117,7 @@ async def list_salons_for_style(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
 ):
     """
     Return salons that offer a given style (sub_service),
@@ -127,6 +128,7 @@ async def list_salons_for_style(
         sub_service_id=sub_service_id,
         limit=limit,
         offset=offset,
+        current_user_id=current_user.user_id,
     )
 
     return results

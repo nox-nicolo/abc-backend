@@ -16,6 +16,7 @@ from models.posts.posts import Post
 from models.profile.salon import Salon, SalonLocation
 from models.services.service import SubServices
 from pydantic_schemas.pagination import pagination_meta
+from service.account.enforcement import customer_recommendation_controls, is_blocked_between
 
 _salon_url = f"{BASE_URL}/{ImageDirectories.SALON_COVER_DIR.value}"
 _minor_url = f"{BASE_URL}/{ImageDirectories.SERVICE_DIR.value}minor/"
@@ -46,6 +47,14 @@ def get_nearby_salons(
     offset: int = 0,
     current_user_id: str | None = None,
 ) -> dict:
+    if current_user_id:
+        controls = customer_recommendation_controls(db, current_user_id)
+        if not controls.use_location:
+            return {
+                "items": [],
+                "pagination": pagination_meta(total=0, limit=limit, offset=offset),
+            }
+
     lat_delta = radius_km / 111.0
     lng_degrees_per_km = max(abs(111.320 * cos(radians(lat))), 0.01)
     lng_delta = radius_km / lng_degrees_per_km
@@ -53,6 +62,7 @@ def get_nearby_salons(
     query = (
         db.query(
             Salon.id,
+            Salon.user_id,
             Salon.title,
             Salon.display_ads,
             SalonLocation.city,
@@ -75,6 +85,8 @@ def get_nearby_salons(
 
     results = []
     for row in rows:
+        if is_blocked_between(db, current_user_id, row.user_id):
+            continue
         if row.latitude is None or row.longitude is None:
             continue
         dist = _haversine_km(lat, lng, row.latitude, row.longitude)
@@ -94,6 +106,7 @@ def get_nearby_salons(
         fallback_rows = (
             db.query(
                 Salon.id,
+                Salon.user_id,
                 Salon.title,
                 Salon.display_ads,
                 SalonLocation.city,
@@ -111,6 +124,8 @@ def get_nearby_salons(
             .all()
         )
         for row in fallback_rows:
+            if is_blocked_between(db, current_user_id, row.user_id):
+                continue
             if row.latitude is None or row.longitude is None:
                 continue
             dist = _haversine_km(lat, lng, row.latitude, row.longitude)
@@ -144,6 +159,7 @@ def get_top_salons(
     query = (
         db.query(
             Salon.id,
+            Salon.user_id,
             Salon.title,
             Salon.display_ads,
             SalonLocation.city,
@@ -157,6 +173,7 @@ def get_top_salons(
         .filter(Salon.user_id != current_user_id)
         .group_by(
             Salon.id,
+            Salon.user_id,
             Salon.title,
             Salon.display_ads,
             SalonLocation.city,
@@ -181,6 +198,7 @@ def get_top_salons(
             "booking_count": row.booking_count,
         }
         for row in rows
+        if not is_blocked_between(db, current_user_id, row.user_id)
     ]
     return {
         "items": items,
@@ -190,8 +208,20 @@ def get_top_salons(
 
 # ── Trending styles (sub-services by recent post count) ───────────────────────
 
-def get_trending_styles(db: Session, limit: int = 10, offset: int = 0) -> dict:
+def get_trending_styles(
+    db: Session,
+    limit: int = 10,
+    offset: int = 0,
+    current_user_id: str | None = None,
+) -> dict:
     """Returns the most-posted sub-services in the last 30 days with their images."""
+    if current_user_id:
+        controls = customer_recommendation_controls(db, current_user_id)
+        if not controls.show_trending:
+            return {
+                "items": [],
+                "pagination": pagination_meta(total=0, limit=limit, offset=offset),
+            }
     since = datetime.now(timezone.utc) - timedelta(days=30)
 
     query = (

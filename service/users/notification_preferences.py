@@ -44,6 +44,9 @@ def update_preferences(
             )
         pref.reminder_lead_minutes = payload.reminder_lead_minutes
 
+    if payload.promotions_preferred_time is not None:
+        pref.promotions_preferred_time = payload.promotions_preferred_time or None
+
     for field in (
         "allow_likes",
         "allow_comments",

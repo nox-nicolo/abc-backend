@@ -86,3 +86,43 @@ async def mail_send(code: str, email: str):
         )
 
 # send code via sms
+
+
+async def password_reset_mail_send(reset_link: str, email: str):
+    html = f"""
+       <body style="display: flex; justify-content: center; align-items: center; height: 100vh; padding-right: 20px; text-align: center;">
+            <div style="max-width: 600px; padding: 20px; background-color: #f9f9f9; border-radius: 10px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);">
+                <h1>Reset your Africa Beauty password</h1>
+                <p>We received a request to reset your password.</p>
+                <p>Use the button below to create a new password. This link expires in 15 minutes.</p>
+                <p>
+                    <a href="{reset_link}" style="display: inline-block; background-color: #111827; color: #ffffff; padding: 12px 18px; border-radius: 6px; text-decoration: none; font-weight: bold;">Reset Password</a>
+                </p>
+                <p>If the button does not work, copy and paste this link into the app:</p>
+                <p style="word-break: break-all;">{reset_link}</p>
+                <p>If you did not request this, you can ignore this email.</p>
+            </div>
+        </body>
+    """
+
+    message = MessageSchema(
+        subject="Reset your password",
+        recipients=[email],
+        body=html,
+        subtype=MessageType.html,
+    )
+
+    fm = FastMail(conf)
+
+    try:
+        await fm.send_message(message=message)
+        return JSONResponse(
+            status_code=200,
+            content={"message": "Password reset email has been sent"},
+        )
+    except Exception:
+        logger.exception("Failed to send password reset email")
+        return JSONResponse(
+            status_code=500,
+            content={"message": "Failed to send password reset email"},
+        )

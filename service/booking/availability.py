@@ -13,6 +13,7 @@ from models.profile.salon import (
     SalonWorkingHour,
 )
 from pydantic_schemas.availability import AvailabilityOverrideIn
+from service.account.enforcement import salon_booking_rules_for_salon
 
 
 TZ_EAT = timezone(timedelta(hours=3))
@@ -107,7 +108,8 @@ def get_slots_for_service(
     capacity = offering.concurrent_capacity or 1
     open_dt = _local_datetime(target_date, schedule["open_time"])
     close_dt = _local_datetime(target_date, schedule["close_time"])
-    now_utc = datetime.now(timezone.utc)
+    rules = salon_booking_rules_for_salon(db, offering.salon_id)
+    now_utc = datetime.now(timezone.utc) + timedelta(hours=rules.minimum_notice_hours)
 
     slots = []
     cursor = open_dt
@@ -120,6 +122,7 @@ def get_slots_for_service(
               salon_service_price_id=salon_service_price_id,
               start_at=start_utc,
               end_at=end_utc,
+              buffer_minutes=rules.buffer_minutes,
           )
           remaining = max(capacity - booked, 0)
           if remaining > 0:
@@ -128,7 +131,7 @@ def get_slots_for_service(
                   "end_at": end_utc,
                   "remaining_capacity": remaining,
               })
-      cursor += timedelta(minutes=SLOT_STEP_MINUTES)
+      cursor += timedelta(minutes=rules.slot_interval_minutes or SLOT_STEP_MINUTES)
 
     return {
         "date": target_date,
@@ -148,6 +151,12 @@ def ensure_booking_time_available(
 ) -> None:
     local_start = start_at.astimezone(TZ_EAT)
     local_end = end_at.astimezone(TZ_EAT)
+    rules = salon_booking_rules_for_salon(db, offering.salon_id)
+    if start_at < datetime.now(timezone.utc) + timedelta(hours=rules.minimum_notice_hours):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Booking must be at least {rules.minimum_notice_hours} hours from now",
+        )
     schedule = _schedule_for_date(
         db=db,
         salon_id=offering.salon_id,
@@ -210,10 +219,12 @@ def _overlap_count(
     salon_service_price_id: str,
     start_at: datetime,
     end_at: datetime,
+    buffer_minutes: int = 0,
 ) -> int:
+    buffer_delta = timedelta(minutes=max(buffer_minutes or 0, 0))
     return db.query(Booking).filter(
         Booking.salon_service_price_id == salon_service_price_id,
         Booking.status.in_([BookingStatus.PENDING, BookingStatus.CONFIRMED]),
-        Booking.start_at < end_at,
-        Booking.end_at > start_at,
+        Booking.start_at < end_at + buffer_delta,
+        Booking.end_at > start_at - buffer_delta,
     ).count()

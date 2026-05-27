@@ -53,6 +53,7 @@ class Notification(Base):
 
     is_read = Column(Boolean, default=False, nullable=False)
     delivery_status = Column(String(20), default="created", nullable=False, index=True)
+    scheduled_for = Column(TIMESTAMP, nullable=True, index=True)
     created_at = Column(
         TIMESTAMP,
         default=lambda: datetime.now(timezone.utc),

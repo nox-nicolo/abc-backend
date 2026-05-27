@@ -161,13 +161,15 @@ async def profile_salon(db: Session, user: str):
         raise HTTPException(status_code=404, detail="Salon profile not found")
 
     gallery_data = []
-    sorted_galleries = sorted(salon.galleries, key=lambda x: x.created_at)
+    sorted_galleries = sorted(salon.galleries, key=lambda x: (x.position, x.created_at))
 
     for g in sorted_galleries:
         gallery_data.append({
             "id": g.id,
             "file_name": g.file_name,
-            "image_url": f"{SALON_GALLERY_BASE}{g.file_name}"
+            "category": g.category,
+            "position": g.position,
+            "image_url": f"{SALON_GALLERY_BASE}{g.file_name}",
         })
 
     cover_image = (
@@ -197,6 +199,8 @@ async def profile_salon(db: Session, user: str):
         "slogan": salon.slogan,
         "description": salon.description,
         "displayAds": cover_image,
+        "coverPositionX": salon.cover_position_x,
+        "coverPositionY": salon.cover_position_y,
         "profileCompletion": salon.profile_completion,
         "profilePicture": display_picture,
         "location": salon.location,

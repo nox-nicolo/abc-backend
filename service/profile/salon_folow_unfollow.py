@@ -2,6 +2,7 @@ import uuid
 from fastapi import HTTPException, status
 from models.profile.salon import Salon, SalonFollower
 from sqlalchemy.orm import Session
+from service.account.enforcement import is_blocked_between
 
 
 async def follow_salon(
@@ -21,6 +22,11 @@ async def follow_salon(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Salon owners cannot follow their own salon",
+        )
+    if is_blocked_between(db, user_id, salon.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This salon cannot be followed",
         )
 
     exists = (

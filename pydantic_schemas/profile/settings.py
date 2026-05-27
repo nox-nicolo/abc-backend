@@ -6,6 +6,8 @@ from typing import List, Optional
 class AccountMediaResponse(BaseModel):
     profile_picture_url: Optional[str]
     cover_ads_url: Optional[str]
+    cover_position_x: Optional[float] = None
+    cover_position_y: Optional[float] = None
     status: Optional[str]
 
 

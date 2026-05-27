@@ -11,7 +11,9 @@ from core.database import get_db
 from pydantic_schemas.auth.jwt_token import TokenData
 from pydantic_schemas.profile.config_service_salon import MessageResponse, SalonServiceConfigDetailResponse
 from pydantic_schemas.profile.followers_view_profile import get_salon_followers
+from pydantic_schemas.profile.insights import ProfileInsightsResponse
 from pydantic_schemas.profile.salon import  SalonGalleryResponse, SalonProfileResponse
+from pydantic_schemas.profile.trust import BusinessDocumentUploadResponse, TrustStatusResponse
 from pydantic_schemas.profile.salon_config_service import SalonServiceConfigIn, SalonServiceConfigOut
 from pydantic_schemas.profile.salon_stylists import SalonStylistCreate, SalonStylistListOut, SalonStylistOut, SalonStylistOutSimple, SalonStylistUpdate, UserSearchListOut
 from pydantic_schemas.profile.salon_view import SalonFollowersResponseSchema, SalonViewProfileResponseSchema
@@ -19,12 +21,15 @@ from pydantic_schemas.profile.salon_activity import ActivityFeedResponse
 from pydantic_schemas.profile.settings import AccountMediaResponse, SalonAvailabilityOverrideIn, SalonAvailabilityOverrideListResponse, SalonAvailabilityOverrideOut, SalonContactLocationResponse, SalonContactUpdateRequest, SalonProfileResponse, SalonProfileUpdateRequest, SalonWorkingHoursResponse, SalonWorkingHoursUpdateRequest
 from pydantic_schemas.profile.top_salon import TopSalonResponse
 from service.auth.JWT.oauth2 import get_current_user
-from service.auth.permissions import SalonPrincipal, require_salon_owner
+from service.auth.permissions import SalonPrincipal, UserPrincipal, require_active_user, require_salon_owner
+from service.account.audit import record_audit_event
 from service.profile.configure_service_salon import get_salon_services_for_config
 from service.profile.salon import profile_salon
 from service.profile.salon_config_service import create_salon_service, update_salon_service
 from service.profile.salon_create_stylists import SalonStylistService
 from service.profile.salon_folow_unfollow import follow_salon, unfollow_salon
+from service.profile.insights import get_profile_insights, record_salon_service_tap
+from service.profile.trust import get_trust_status, upload_business_document
 from service.profile.salon_service_config import list_selectable_services
 from service.profile.salon_view import view_salon_profile
 from service.profile.settings.contact_location import update_salon_contact_
@@ -45,6 +50,68 @@ profile = APIRouter(
 
 # -------------------------------------------------------------------
 #                                Get
+
+# -------------------------------------------------------------------
+@profile.get(
+    "/insights",
+    response_model=ProfileInsightsResponse,
+    status_code=status.HTTP_200_OK,
+)
+def profile_insights(
+    db: Session = Depends(get_db),
+    principal: UserPrincipal = Depends(require_active_user),
+):
+    return get_profile_insights(db=db, principal=principal)
+
+
+@profile.get(
+    "/trust",
+    response_model=TrustStatusResponse,
+    status_code=status.HTTP_200_OK,
+)
+def profile_trust_status(
+    db: Session = Depends(get_db),
+    principal: UserPrincipal = Depends(require_active_user),
+):
+    return get_trust_status(db=db, principal=principal)
+
+
+@profile.post(
+    "/salon/trust/business-document",
+    response_model=BusinessDocumentUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def salon_business_document_upload(
+    document: UploadFile = File(...),
+    document_type: str = Form(default="business_document"),
+    db: Session = Depends(get_db),
+    salon_owner: SalonPrincipal = Depends(require_salon_owner),
+):
+    return await upload_business_document(
+        db=db,
+        salon_owner=salon_owner,
+        document=document,
+        document_type=document_type,
+    )
+
+
+@profile.post(
+    "/salon/{salon_id}/service-tap/{salon_service_price_id}",
+    status_code=status.HTTP_200_OK,
+)
+def salon_service_tap(
+    salon_id: str,
+    salon_service_price_id: str,
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    return record_salon_service_tap(
+        db=db,
+        salon_id=salon_id,
+        salon_service_price_id=salon_service_price_id,
+        user_id=current_user.user_id,
+    )
+
 
 # -------------------------------------------------------------------
 # Get Salon Profle
@@ -380,15 +447,28 @@ async def fetch_top_salons(
 async def upload_account_media(
     profile_image: UploadFile | None = File(None),
     cover_ads: UploadFile | None = File(None),
+    cover_position_x: float | None = Form(None),
+    cover_position_y: float | None = Form(None),
     db: Session = Depends(get_db),
     salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
-    return await upload_account_media_(
+    result = await upload_account_media_(
         user_id=salon_owner.user_id,
         profile_image=profile_image,
         cover_ads=cover_ads,
+        cover_position_x=cover_position_x,
+        cover_position_y=cover_position_y,
         db=db,
     )
+    record_audit_event(
+        db,
+        user_id=salon_owner.user_id,
+        event_type="profile_updated",
+        title="Profile media updated",
+        description="Salon profile photo or cover image was updated.",
+        metadata={"section": "salon_media"},
+    )
+    return result
     
 # -------------------------------------------------------------------
 
@@ -406,11 +486,20 @@ async def update_salon_profile(
     db: Session = Depends(get_db),
     salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
-    return await update_salon_profile_(
+    result = await update_salon_profile_(
         user_id=salon_owner.user_id,
         payload=payload,
         db=db,
     )
+    record_audit_event(
+        db,
+        user_id=salon_owner.user_id,
+        event_type="profile_updated",
+        title="Profile updated",
+        description="Salon profile details were updated.",
+        metadata={"section": "salon_profile"},
+    )
+    return result
 
 # -------------------------------------------------------------------
 
@@ -427,11 +516,20 @@ async def update_salon_contact(
     db: Session = Depends(get_db),
     salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
-    return await update_salon_contact_(
+    result = await update_salon_contact_(
         user_id=salon_owner.user_id,
         payload=payload,
         db=db,
     )
+    record_audit_event(
+        db,
+        user_id=salon_owner.user_id,
+        event_type="profile_updated",
+        title="Contact and location updated",
+        description="Salon contact or location details were updated.",
+        metadata={"section": "salon_contact"},
+    )
+    return result
 # -------------------------------------------------------------------
 
 
@@ -447,11 +545,20 @@ async def update_working_hours(
     db: Session = Depends(get_db),
     salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
-    return await update_salon_working_hours_(
+    result = await update_salon_working_hours_(
         user_id=salon_owner.user_id,
         payload=payload,
         db=db,
     )
+    record_audit_event(
+        db,
+        user_id=salon_owner.user_id,
+        event_type="working_hours_changed",
+        title="Working hours changed",
+        description="Salon weekly working hours were updated.",
+        metadata={"section": "working_hours"},
+    )
+    return result
 
 # -------------------------------------------------------------------
 
@@ -523,15 +630,34 @@ async def update_gallery(
     files: List[UploadFile] = File(default=[]),
     # Optional IDs for deleting (sent as a comma-separated string or multiple form fields)
     delete_ids: List[str] = Form(default=[]),
+    gallery_order: str | None = Form(None),
+    gallery_categories: str | None = Form(None),
+    new_file_categories: str | None = Form(None),
     db: Session = Depends(get_db), 
     salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
-    return await manage_salon_gallery_(
+    result = await manage_salon_gallery_(
         db=db,
         user_id=salon_owner.user_id,
         files=files,
         delete_ids=delete_ids,
+        gallery_order=gallery_order,
+        gallery_categories=gallery_categories,
+        new_file_categories=new_file_categories,
     )
+    record_audit_event(
+        db,
+        user_id=salon_owner.user_id,
+        event_type="gallery_updated",
+        title="Gallery updated",
+        description="Salon gallery images were added or removed.",
+        metadata={
+            "section": "salon_gallery",
+            "added_count": len(files),
+            "removed_count": len(delete_ids),
+        },
+    )
+    return result
     
 # -------------------------------------------------------------------
 
@@ -549,7 +675,16 @@ def create_salon_stylist(
     db: Session = Depends(get_db),
     salon_owner: SalonPrincipal = Depends(require_salon_owner),
 ):
-    return SalonStylistService(db, user_id=salon_owner.user_id).create(payload)
+    result = SalonStylistService(db, user_id=salon_owner.user_id).create(payload)
+    record_audit_event(
+        db,
+        user_id=salon_owner.user_id,
+        event_type="stylist_added",
+        title="Stylist added",
+        description="A stylist was added to the salon team.",
+        metadata={"stylist_id": getattr(result, "id", None)},
+    )
+    return result
 
 
 # -------------------------------------------------------------------
@@ -619,7 +754,16 @@ def update_salon_stylist(
     Only the salon owner can perform this.
     """
     service = SalonStylistService(db, user_id=salon_owner.user_id)
-    return service.update_stylist(stylist_id, payload)
+    result = service.update_stylist(stylist_id, payload)
+    record_audit_event(
+        db,
+        user_id=salon_owner.user_id,
+        event_type="stylist_updated",
+        title="Stylist updated",
+        description="A stylist profile or permissions were updated.",
+        metadata={"stylist_id": stylist_id},
+    )
+    return result
 
 
 # -------------------------------------------------------------------
@@ -640,4 +784,12 @@ def remove_salon_stylist(
     """
     service = SalonStylistService(db, user_id=salon_owner.user_id)
     service.remove_stylist(stylist_id)
+    record_audit_event(
+        db,
+        user_id=salon_owner.user_id,
+        event_type="stylist_removed",
+        title="Stylist removed",
+        description="A stylist was removed from the salon team.",
+        metadata={"stylist_id": stylist_id},
+    )
     return None # 204 No Content doesn't return a body

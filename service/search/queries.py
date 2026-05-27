@@ -441,6 +441,7 @@ from service.search.scoring import (
     compute_hashtag_score,
     compute_service_score,
 )
+from service.account.enforcement import can_discover_customer, is_blocked_between
 
 profile_url = f"{BASE_URL}/{ImageDirectories.PROFILE_DIR.value}"
 major_url = f"{BASE_URL}/{ImageDirectories.SERVICE_DIR.value}major/"
@@ -513,6 +514,8 @@ def search_users(db: Session, q: str, limit: int, current_user_id: str) -> List[
     for user in users:
         if user.id == current_user_id:
             continue
+        if not can_discover_customer(db, user.id, current_user_id):
+            continue
 
         avatar_url = (
             profile_url + user.profile_picture.file_name
@@ -568,6 +571,7 @@ def search_share_users(db: Session, q: str, limit: int, current_user_id: str) ->
             score=compute_user_score(user.username, user.name, q_clean),
         )
         for user in users
+        if can_discover_customer(db, user.id, current_user_id)
     ]
 
 
@@ -596,6 +600,8 @@ def search_salons(db: Session, q: str, limit: int, current_user_id: str) -> List
     results: List[SearchSalonResult] = []
     for salon in salons:
         if salon.user_id == current_user_id:
+            continue
+        if is_blocked_between(db, current_user_id, salon.user_id):
             continue
 
         active_services_count = (
@@ -819,6 +825,8 @@ def search_services(db: Session, q: str, limit: int, current_user_id: str) -> Li
 
     if prices:
         for row in prices:
+            if row.salon and is_blocked_between(db, current_user_id, row.salon.user_id):
+                continue
             if row.sub_service:
                 parent_name = safe_parent_service_name(row.sub_service)
 

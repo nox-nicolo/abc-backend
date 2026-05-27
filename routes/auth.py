@@ -2,25 +2,39 @@
 from fastapi import Depends, HTTPException, APIRouter, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import or_
 
 from core.database import get_db
+from core.enumeration import AccountAccessStatus
+from core.hash_pass import Hash
 from core.rate_limit import rate_limit
 from models.auth.refresh_token import RefreshToken
+from models.auth.user import User
 from pydantic_schemas.auth.jwt_token import TokenData
 from pydantic_schemas.auth.me import MeResponseSchema
+from pydantic_schemas.auth.password_reset import ForgotPasswordRequest, ResetPasswordRequest
 from pydantic_schemas.auth.user_create import UserCreate
 from sqlalchemy.orm import Session
 
 from pydantic_schemas.auth.user_verification import UserVerification
-from service.auth import create_user, login_user, verify_user
+from service.auth import create_user, login_user, password_reset, verify_user
 from service.auth.JWT.oauth2 import get_current_user, refresh_token
 from service.auth.me import me_
+from service.account.audit import record_audit_event
 
 
 class LogoutRequest(BaseModel):
     refresh_token: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
+class AccountStatusRequest(BaseModel):
+    password: str = Field(..., min_length=1)
 
 auth = APIRouter(
     prefix='/auth',
@@ -64,6 +78,32 @@ def login(user: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
             return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Invalid credentials"})
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+
+
+@auth.post('/forgot-password', dependencies=[Depends(rate_limit(bucket="auth:forgot-password", limit=3, window_seconds=300))])
+async def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    try:
+        return await password_reset.request_password_reset(str(body.email), db)
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": f"An unexpected error occured: {e}"})
+
+
+@auth.post('/reset-password', dependencies=[Depends(rate_limit(bucket="auth:reset-password", limit=5, window_seconds=300))])
+def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
+    try:
+        return password_reset.reset_password(
+            token=body.token,
+            new_password=body.new_password,
+            db=db,
+        )
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": f"An unexpected error occured: {e}"})
     
     
 # verify route
@@ -118,6 +158,102 @@ def logout(body: LogoutRequest, db: Session = Depends(get_db)):
         db_token.revoked = True
         db.commit()
     return {"detail": "Logged out"} 
+
+
+@auth.post('/change-password', status_code=status.HTTP_200_OK)
+def change_password(
+    body: ChangePasswordRequest,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if not Hash.verify(body.current_password, user.password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+
+    user.password = Hash.hashing(body.new_password)
+    db.query(RefreshToken).filter(
+        RefreshToken.user_id == user.id,
+        RefreshToken.revoked == False,
+    ).update({"revoked": True}, synchronize_session=False)
+    db.commit()
+    record_audit_event(
+        db,
+        user_id=user.id,
+        event_type="password_changed",
+        title="Password changed",
+        description="Account password was changed and active sessions were revoked.",
+        metadata={"sessions_revoked": True},
+    )
+    return {"detail": "Password changed. Please sign in again."}
+
+
+@auth.get('/login-history', status_code=status.HTTP_200_OK)
+def login_history(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tokens = (
+        db.query(RefreshToken)
+        .filter(RefreshToken.user_id == current_user.user_id)
+        .order_by(RefreshToken.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": token.id,
+                "created_at": token.created_at,
+                "revoked": token.revoked,
+            }
+            for token in tokens
+        ]
+    }
+
+
+@auth.post('/account/deactivate', status_code=status.HTTP_200_OK)
+def deactivate_account(
+    body: AccountStatusRequest,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if not Hash.verify(body.password, user.password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password is incorrect")
+
+    user.account_access = AccountAccessStatus.SUSPENDED
+    db.query(RefreshToken).filter(
+        RefreshToken.user_id == user.id,
+        RefreshToken.revoked == False,
+    ).update({"revoked": True}, synchronize_session=False)
+    db.commit()
+    return {"detail": "Account deactivated"}
+
+
+@auth.delete('/account', status_code=status.HTTP_200_OK)
+def delete_account(
+    body: AccountStatusRequest,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if not Hash.verify(body.password, user.password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password is incorrect")
+
+    user.account_access = AccountAccessStatus.DELETED
+    db.query(RefreshToken).filter(
+        RefreshToken.user_id == user.id,
+        RefreshToken.revoked == False,
+    ).update({"revoked": True}, synchronize_session=False)
+    db.commit()
+    return {"detail": "Account deleted"}
     
     
     

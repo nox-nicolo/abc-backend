@@ -12,6 +12,7 @@ from core.enumeration import ImageURL
 from models.auth.user import User
 from models.profile.salon import Salon, SalonStylist
 from pydantic_schemas.profile.salon_stylists import SalonStylistUpdate
+from service.account.enforcement import enforce_salon_team_permission
 
 
 class SalonStylistService:
@@ -45,6 +46,7 @@ class SalonStylistService:
         - is_owner: bool
         - is_active: bool
         """
+        enforce_salon_team_permission(self.db, self.user_id, "manage_stylists")
 
         # Ensure salon exists for the authenticated user
         salon = (
@@ -182,6 +184,7 @@ class SalonStylistService:
     # Remove stylist (soft delete or hard delete)
     # ---------------------------------------------------------------
     def remove_stylist(self, stylist_id: str):
+        enforce_salon_team_permission(self.db, self.user_id, "manage_stylists")
         # Ensure the stylist actually belongs to THIS owner's salon
         stylist = (
             self.db.query(SalonStylist)
@@ -204,6 +207,7 @@ class SalonStylistService:
     # Update stylist details (title, bio, is_active)
     # ---------------------------------------------------------------
     def update_stylist(self, stylist_id: str, payload: SalonStylistUpdate) -> SalonStylist:
+        enforce_salon_team_permission(self.db, self.user_id, "manage_stylists")
         # 1. Fetch the stylist record belonging to THIS owner's salon
         stylist = (
             self.db.query(SalonStylist)

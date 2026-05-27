@@ -9,6 +9,7 @@ from models.auth.refresh_token import RefreshToken
 from models.auth.user import User
 from pydantic_schemas.auth.user_login import UserLogin
 from service.auth.JWT.JWT_token import ACCESS_TOKEN_EXPIRE_MINUTES, create_access_token, create_refresh_token
+from service.account.audit import record_audit_event
 
 # Base URL (adjust to your server IP/domain)
 BASE_URL = ImageURL.PROFILE_URL
@@ -92,6 +93,14 @@ def login_user(user: UserLogin, db: Session = Depends(get_db)):
     db_token = RefreshToken(user_id=str(existing_user.id), token=refresh_token)
     db.add(db_token)
     db.commit()
+    record_audit_event(
+        db,
+        user_id=str(existing_user.id),
+        event_type="device_logged_in",
+        title="Device logged in",
+        description="A new authenticated session was created.",
+        metadata={"username": existing_user.username},
+    )
 
     return {
         "user_id": existing_user.id,

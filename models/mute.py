@@ -14,6 +14,7 @@ class UserMute(Base):
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     target_type = Column(String(20), nullable=False, index=True)
     target_id = Column(String(36), nullable=False, index=True)
+    reason = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     user = relationship("User")

@@ -1,5 +1,6 @@
-from datetime import datetime
+from datetime import datetime, time, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
@@ -37,6 +38,7 @@ PROFILE_IMAGE_BASE = f"{BASE_URL}/{ImageDirectories.PROFILE_DIR.value}"
 
 PREVIEW_MAX_LEN = 140
 SALON_BOOKING_LINK_BASE = "africanbeauty://salon"
+LOCAL_TZ = ZoneInfo("Africa/Dar_es_Salaam")
 
 
 def _avatar_url(user: Optional[User]) -> Optional[str]:
@@ -78,6 +80,7 @@ def create_notification(
     comment_id: Optional[str] = None,
     booking_id: Optional[str] = None,
     message: Optional[str] = None,
+    scheduled_for: Optional[datetime] = None,
     commit: bool = True,
 ) -> Notification:
     """
@@ -90,6 +93,9 @@ def create_notification(
     if not _notification_allowed(db=db, recipient_id=recipient_id, type=type):
         return None  # type: ignore[return-value]
 
+    now = datetime.now(timezone.utc)
+    scheduled_for = _aware_utc(scheduled_for) if scheduled_for else None
+    is_scheduled = scheduled_for is not None and scheduled_for > now
     notif = Notification(
         recipient_id=recipient_id,
         actor_id=actor_id,
@@ -98,11 +104,16 @@ def create_notification(
         comment_id=comment_id,
         booking_id=booking_id,
         message=message,
-        delivery_status="created",
+        delivery_status="scheduled" if is_scheduled else "created",
+        scheduled_for=scheduled_for,
     )
     db.add(notif)
     if commit:
         db.flush()
+        if is_scheduled:
+            db.commit()
+            db.refresh(notif)
+            return notif
         notif.delivery_status = "sent"
         db.commit()
         db.refresh(notif)
@@ -120,6 +131,9 @@ def create_notification(
         )
     else:
         db.flush()
+        if is_scheduled:
+            db.flush()
+            return notif
         notif.delivery_status = "sent"
         db.flush()
         _send_notification_push(
@@ -290,6 +304,33 @@ def _notification_allowed(*, db: Session, recipient_id: str, type: str) -> bool:
     return True
 
 
+def _marketing_scheduled_for(*, db: Session, recipient_id: str) -> datetime | None:
+    pref = (
+        db.query(UserNotificationPreference)
+        .filter(UserNotificationPreference.user_id == recipient_id)
+        .first()
+    )
+    preferred = (pref.promotions_preferred_time if pref else None) or None
+    if not preferred:
+        return None
+    hour, minute = [int(part) for part in preferred.split(":", 1)]
+    now_local = datetime.now(LOCAL_TZ)
+    scheduled_local = datetime.combine(
+        now_local.date(),
+        time(hour=hour, minute=minute),
+        tzinfo=LOCAL_TZ,
+    )
+    if scheduled_local <= now_local:
+        scheduled_local += timedelta(days=1)
+    return scheduled_local.astimezone(timezone.utc)
+
+
+def _aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 # ------------------------------------------------------------------
 # LIST — cursor-paginated, eager-loads actor + comment preview
 # ------------------------------------------------------------------
@@ -318,6 +359,10 @@ def list_notifications(
             joinedload(Notification.actor).joinedload(User.salon),
         )
         .filter(Notification.recipient_id == user_id)
+        .filter(
+            (Notification.scheduled_for.is_(None))
+            | (Notification.scheduled_for <= datetime.now(timezone.utc))
+        )
     )
     if muted_users:
         query = query.filter(~Notification.actor_id.in_(muted_users))
@@ -347,6 +392,8 @@ def list_notifications(
     grouped_like_posts: set[str] = set()
 
     for n in rows:
+        if n.delivery_status == "scheduled":
+            n.delivery_status = "sent"
         if n.actor and n.actor.salon and n.actor.salon.id in muted_salons:
             continue
         if len(items) >= limit:
@@ -377,6 +424,8 @@ def list_notifications(
         )
 
     next_cursor = rows[-1].created_at.isoformat() if len(rows) == limit * 4 else None
+    if any(n.delivery_status == "sent" for n in rows):
+        db.commit()
     return NotificationListResponse(items=items, next_cursor=next_cursor)
 
 
@@ -434,6 +483,8 @@ def get_unread_count(*, db: Session, user_id: str) -> UnreadCountResponse:
         .filter(
             Notification.recipient_id == user_id,
             Notification.is_read.is_(False),
+            (Notification.scheduled_for.is_(None))
+            | (Notification.scheduled_for <= datetime.now(timezone.utc)),
         )
         .count()
     )
@@ -549,6 +600,7 @@ def create_salon_event_campaign(
             actor_id=owner_user_id,
             type="salon_event_marketing",
             message=message,
+            scheduled_for=_marketing_scheduled_for(db=db, recipient_id=customer.id),
             commit=False,
         )
         if notification is None:
@@ -637,6 +689,7 @@ def create_salon_promotion_campaign(
             actor_id=owner_user_id,
             type="salon_promotion_campaign",
             message=message,
+            scheduled_for=_marketing_scheduled_for(db=db, recipient_id=customer.id),
             commit=False,
         )
         if notification is None:

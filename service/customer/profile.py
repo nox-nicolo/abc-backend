@@ -21,7 +21,7 @@ def _build_profile_url(file_name):
     return f"{PROFILE_IMAGE_BASE}{file_name}"
 
 
-def get_customer_profile_(user_id: str, db: Session) -> CustomerProfileResponse:
+def get_customer_profile_(user_id: str, db: Session, viewer_user_id: str | None = None) -> CustomerProfileResponse:
     user = (
         db.query(User)
         .options(
@@ -65,7 +65,7 @@ def get_customer_profile_(user_id: str, db: Session) -> CustomerProfileResponse:
     )
     preferred_services = user_services.services if user_services and user_services.services else []
 
-    return CustomerProfileResponse(
+    response = CustomerProfileResponse(
         id=user.id,
         username=user.username,
         name=user.name,
@@ -81,6 +81,17 @@ def get_customer_profile_(user_id: str, db: Session) -> CustomerProfileResponse:
             reviews_count=reviews_count,
         ),
         is_salon_owner=user.salon is not None,
+    )
+    if viewer_user_id is None:
+        return response
+
+    from service.account.enforcement import apply_customer_profile_visibility
+
+    return apply_customer_profile_visibility(
+        db=db,
+        profile=response,
+        target_user_id=user_id,
+        viewer_user_id=viewer_user_id,
     )
 
 

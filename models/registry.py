@@ -9,6 +9,8 @@ import models.auth.profile_picture  # noqa: F401
 import models.auth.refresh_token  # noqa: F401
 import models.auth.user  # noqa: F401
 import models.ads  # noqa: F401
+import models.account.settings  # noqa: F401
+import models.account.audit  # noqa: F401
 import models.auth.verification  # noqa: F401
 import models.booking.booking  # noqa: F401
 import models.chat  # noqa: F401
@@ -17,7 +19,9 @@ import models.notifications.device_token  # noqa: F401
 import models.mute  # noqa: F401
 import models.posts.posts  # noqa: F401
 import models.profile.notification_preferences  # noqa: F401
+import models.profile.insights  # noqa: F401
 import models.profile.salon  # noqa: F401
+import models.profile.trust  # noqa: F401
 import models.profile.user  # noqa: F401
 import models.saved  # noqa: F401
 import models.search.search  # noqa: F401

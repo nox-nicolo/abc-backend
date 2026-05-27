@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 from core.enumeration import BookingStatus, ServiceCreatedStatus
+from models.account.settings import UserAccountSettings
 from models.auth.user import User
 from models.booking.booking import Booking, ServiceReview
 from models.profile.notification_preferences import UserNotificationPreference
@@ -29,6 +30,7 @@ def booking_db(db_session_factory):
     yield from db_session_factory(
         [
             User.__table__,
+            UserAccountSettings.__table__,
             Salon.__table__,
             Services.__table__,
             SubServices.__table__,

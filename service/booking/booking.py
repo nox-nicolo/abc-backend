@@ -37,6 +37,7 @@ from service.notification.booking_ai import (
     generate_booking_confirmation_message,
 )
 from service.notification.notification import create_notification
+from service.account.enforcement import is_blocked_between, salon_booking_rules_for_salon
 
 
 salon_url = ImageURL.SALON_COVER_URL.value
@@ -104,14 +105,31 @@ def _validate_bookable_offering(offering: SalonServicePrice) -> None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Service capacity is not configured")
 
 
-def _validate_future_start(start_at: datetime, message: str) -> None:
+def _validate_future_start(start_at: datetime, message: str, minimum_notice_hours: int | None = None) -> None:
+    start_at = _aware_utc(start_at)
     if _is_past_or_now(start_at):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, message)
-    if start_at < _now() + timedelta(minutes=MIN_BOOKING_LEAD_MINUTES):
+    lead_delta = (
+        timedelta(hours=minimum_notice_hours)
+        if minimum_notice_hours is not None
+        else timedelta(minutes=MIN_BOOKING_LEAD_MINUTES)
+    )
+    if start_at < _now() + lead_delta:
+        lead_label = (
+            f"{minimum_notice_hours} hours"
+            if minimum_notice_hours is not None
+            else f"{MIN_BOOKING_LEAD_MINUTES} minutes"
+        )
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            f"Booking must be at least {MIN_BOOKING_LEAD_MINUTES} minutes from now",
+            f"Booking must be at least {lead_label} from now",
         )
+
+
+def _aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
 
 
 # ---------------------------------------------------------
@@ -152,8 +170,19 @@ async def create_booking_service(
             status.HTTP_400_BAD_REQUEST,
             "Salon owners cannot book their own salon",
         )
+    salon = offering.salon or db.query(Salon).filter(Salon.id == offering.salon_id).first()
+    if salon and is_blocked_between(db, user_id, salon.user_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "This salon cannot be contacted")
 
-    _validate_future_start(payload.start_at, "Booking start time must be in the future")
+    rules = salon_booking_rules_for_salon(db, offering.salon_id)
+    if not rules.allow_customer_notes and (payload.note or "").strip():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Customer notes are disabled for this salon")
+
+    _validate_future_start(
+        payload.start_at,
+        "Booking start time must be in the future",
+        rules.minimum_notice_hours,
+    )
     _validate_bookable_offering(offering)
 
     end_at = payload.start_at + timedelta(minutes=offering.duration_minutes)
@@ -166,7 +195,14 @@ async def create_booking_service(
     )
 
     capacity = offering.concurrent_capacity or 1
-    if _has_overlap(db, offering.id, payload.start_at, end_at, capacity):
+    if _has_overlap(
+        db,
+        offering.id,
+        payload.start_at,
+        end_at,
+        capacity,
+        buffer_minutes=rules.buffer_minutes,
+    ):
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "This time slot is fully booked, please choose another time",
@@ -180,7 +216,7 @@ async def create_booking_service(
         start_at=payload.start_at,
         end_at=end_at,
 
-        status=BookingStatus.PENDING,
+        status=BookingStatus.CONFIRMED if rules.auto_confirm else BookingStatus.PENDING,
 
         # snapshots (agreement)
         service_name_snapshot=(
@@ -198,7 +234,7 @@ async def create_booking_service(
     db.flush()
 
     # Notify salon owner that a new booking came in.
-    salon = db.query(Salon).filter(Salon.id == offering.salon_id).first()
+    salon = salon or db.query(Salon).filter(Salon.id == offering.salon_id).first()
     if salon:
         create_notification(
             db=db,
@@ -338,6 +374,12 @@ async def cancel_booking_service(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             "Too late to cancel booking",
+        )
+    rules = salon_booking_rules_for_salon(db, booking.salon_id)
+    if _aware_utc(booking.start_at) < _now() + timedelta(hours=rules.cancel_window_hours):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Bookings must be cancelled at least {rules.cancel_window_hours} hours before start time",
         )
 
     booking.status = BookingStatus.CANCELLED
@@ -646,6 +688,7 @@ async def get_availability_slots_service(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Service offering not found")
     if offering.duration_minutes is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Service duration not configured")
+    rules = salon_booking_rules_for_salon(db, offering.salon_id)
 
     days = max(1, min(days, 31))
     today = datetime.now(SALON_TIMEZONE).date()
@@ -656,7 +699,7 @@ async def get_availability_slots_service(
     items = []
     duration = timedelta(minutes=offering.duration_minutes)
     capacity = offering.concurrent_capacity or 1
-    now_utc = _now()
+    now_utc = _now() + timedelta(hours=rules.minimum_notice_hours)
 
     for offset in range(days):
         day = first_day + timedelta(days=offset)
@@ -678,6 +721,7 @@ async def get_availability_slots_service(
                         offering.id,
                         start_utc,
                         end_utc,
+                        buffer_minutes=rules.buffer_minutes,
                     )
                     remaining = capacity - overlapping
                     if remaining > 0:
@@ -688,7 +732,7 @@ async def get_availability_slots_service(
                                 "remaining_capacity": remaining,
                             }
                         )
-                cursor += timedelta(minutes=30)
+                cursor += timedelta(minutes=rules.slot_interval_minutes)
 
         items.append(
             {
@@ -770,12 +814,14 @@ def _overlap_count(
     start_at: datetime,
     end_at: datetime,
     exclude_booking_id: str = None,
+    buffer_minutes: int = 0,
 ) -> int:
+    buffer_delta = timedelta(minutes=max(buffer_minutes or 0, 0))
     count_q = db.query(func.count(Booking.id)).filter(
         Booking.salon_service_price_id == salon_service_price_id,
         Booking.status.in_(ACTIVE_BOOKING_STATUSES),
-        Booking.start_at < end_at,
-        Booking.end_at > start_at,
+        Booking.start_at < end_at + buffer_delta,
+        Booking.end_at > start_at - buffer_delta,
     )
     if exclude_booking_id:
         count_q = count_q.filter(Booking.id != exclude_booking_id)
@@ -792,6 +838,7 @@ def _has_overlap(
     end_at: datetime,
     capacity: int = 1,
     exclude_booking_id: str = None,
+    buffer_minutes: int = 0,
 ) -> bool:
     """Return True when the number of overlapping bookings for this service slot meets or exceeds capacity."""
     return _overlap_count(
@@ -800,6 +847,7 @@ def _has_overlap(
         start_at,
         end_at,
         exclude_booking_id,
+        buffer_minutes,
     ) >= capacity
 
 
@@ -827,13 +875,18 @@ async def reschedule_booking_service(
     if _is_past_or_now(booking.start_at):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Too late to reschedule this booking")
 
-    _validate_future_start(payload.start_at, "New start time must be in the future")
-
-    new_end_at = payload.start_at + timedelta(minutes=booking.duration_minutes_snapshot)
-
     offering = db.query(SalonServicePrice).filter(SalonServicePrice.id == booking.salon_service_price_id).first()
     if not offering:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Service offering not found")
+    rules = salon_booking_rules_for_salon(db, booking.salon_id)
+    _validate_future_start(
+        payload.start_at,
+        "New start time must be in the future",
+        rules.minimum_notice_hours,
+    )
+
+    new_end_at = payload.start_at + timedelta(minutes=booking.duration_minutes_snapshot)
+
     _validate_bookable_offering(offering)
     _ensure_within_availability(
         db=db,
@@ -842,7 +895,15 @@ async def reschedule_booking_service(
         end_at=new_end_at,
     )
     capacity = (offering.concurrent_capacity or 1) if offering else 1
-    if _has_overlap(db, booking.salon_service_price_id, payload.start_at, new_end_at, capacity, exclude_booking_id=booking_id):
+    if _has_overlap(
+        db,
+        booking.salon_service_price_id,
+        payload.start_at,
+        new_end_at,
+        capacity,
+        exclude_booking_id=booking_id,
+        buffer_minutes=rules.buffer_minutes,
+    ):
         raise HTTPException(status.HTTP_409_CONFLICT, "This time slot is fully booked")
 
     booking.start_at = payload.start_at
@@ -953,6 +1014,7 @@ async def get_salons_for_style(
     sub_service_id: str,
     limit: int,
     offset: int,
+    current_user_id: str | None = None,
 ) -> dict:
     """
     Fetch salons offering a given sub service,
@@ -964,6 +1026,7 @@ async def get_salons_for_style(
             SalonServicePrice.id.label("salon_service_price_id"),
 
             Salon.id.label("salon_id"),
+            Salon.user_id.label("user_id"),
             Salon.title.label("salon_name"),
             (SalonLocation.street + " " + SalonLocation.city + ", " + SalonLocation.country).label("salon_city"),
             Salon.display_ads.label("salon_image"),
@@ -990,24 +1053,27 @@ async def get_salons_for_style(
         .all()
     )
 
-    results = [
-        SalonOfferForBooking(
-            salon_service_price_id=row.salon_service_price_id,
+    results = []
+    for row in rows:
+        if is_blocked_between(db, current_user_id, row.user_id):
+            continue
+        results.append(
+            SalonOfferForBooking(
+                salon_service_price_id=row.salon_service_price_id,
 
-            salon_id=row.salon_id,
-            salon_name=row.salon_name,
-            salon_city=row.salon_city,
-            salon_image= salon_url + row.salon_image if row.salon_image else None,
+                salon_id=row.salon_id,
+                salon_name=row.salon_name,
+                salon_city=row.salon_city,
+                salon_image=salon_url + row.salon_image if row.salon_image else None,
 
-            sub_service_id=row.sub_service_id,
-            sub_service_name=row.sub_service_name,
+                sub_service_id=row.sub_service_id,
+                sub_service_name=row.sub_service_name,
 
-            price=row.price,
-            currency=row.currency,
-            duration_minutes=row.duration_minutes,
+                price=row.price,
+                currency=row.currency,
+                duration_minutes=row.duration_minutes,
+            )
         )
-        for row in rows
-    ]
 
     return {
         "results": results,

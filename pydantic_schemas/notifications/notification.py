@@ -28,7 +28,7 @@ class NotificationItem(BaseModel):
     is_grouped: bool = False
     group_count: int = 1
     is_read: bool
-    delivery_status: Literal["created", "sent", "failed", "read"] = "sent"
+    delivery_status: Literal["created", "scheduled", "sent", "failed", "read"] = "sent"
     created_at: datetime
 
 

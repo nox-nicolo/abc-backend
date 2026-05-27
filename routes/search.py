@@ -129,7 +129,12 @@ def trending_styles(
     db: Session = Depends(get_db),
     current_user: TokenData = Depends(get_current_user),
 ):
-    return get_trending_styles(db=db, limit=limit, offset=offset)
+    return get_trending_styles(
+        db=db,
+        limit=limit,
+        offset=offset,
+        current_user_id=current_user.user_id,
+    )
 
 
 # Search Result

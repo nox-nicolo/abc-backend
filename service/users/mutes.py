@@ -1,4 +1,5 @@
 from fastapi import HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from models.auth.user import User
@@ -9,16 +10,45 @@ from models.profile.salon import Salon
 VALID_TARGET_TYPES = {"salon", "user", "post"}
 
 
-def list_mutes(*, db: Session, user_id: str, target_type: str | None = None) -> dict:
+def list_mutes(
+    *,
+    db: Session,
+    user_id: str,
+    target_type: str | None = None,
+    q: str | None = None,
+    sort: str = "newest",
+) -> dict:
     query = db.query(UserMute).filter(UserMute.user_id == user_id)
     if target_type:
         _validate_target_type(target_type)
         query = query.filter(UserMute.target_type == target_type)
-    return {"items": query.order_by(UserMute.created_at.desc()).all()}
+    if q:
+        term = f"%{q.strip()}%"
+        if term != "%%":
+            query = query.filter(
+                or_(
+                    UserMute.target_type.ilike(term),
+                    UserMute.target_id.ilike(term),
+                    UserMute.reason.ilike(term),
+                )
+            )
+    if sort == "type":
+        query = query.order_by(UserMute.target_type.asc(), UserMute.created_at.desc())
+    else:
+        query = query.order_by(UserMute.created_at.desc())
+    return {"items": query.all()}
 
 
-def mute_target(*, db: Session, user_id: str, target_type: str, target_id: str) -> UserMute:
+def mute_target(
+    *,
+    db: Session,
+    user_id: str,
+    target_type: str,
+    target_id: str,
+    reason: str | None = None,
+) -> UserMute:
     _validate_target(db=db, current_user_id=user_id, target_type=target_type, target_id=target_id)
+    clean_reason = reason.strip()[:255] if reason else None
     existing = (
         db.query(UserMute)
         .filter(
@@ -29,9 +59,13 @@ def mute_target(*, db: Session, user_id: str, target_type: str, target_id: str) 
         .first()
     )
     if existing:
+        if clean_reason is not None and existing.reason != clean_reason:
+            existing.reason = clean_reason
+            db.commit()
+            db.refresh(existing)
         return existing
 
-    row = UserMute(user_id=user_id, target_type=target_type, target_id=target_id)
+    row = UserMute(user_id=user_id, target_type=target_type, target_id=target_id, reason=clean_reason)
     db.add(row)
     db.commit()
     db.refresh(row)

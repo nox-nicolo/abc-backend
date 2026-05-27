@@ -253,6 +253,8 @@ async def upload_account_media_(
     profile_image: UploadFile | None,
     cover_ads: UploadFile | None,
     db: Session,
+    cover_position_x: float | None = None,
+    cover_position_y: float | None = None,
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -295,6 +297,11 @@ async def upload_account_media_(
             salon.display_ads = new_cover_file
             cover_url = f"{COVER_PIC_URL}{new_cover_file}"
 
+        if cover_position_x is not None:
+            salon.cover_position_x = max(0.0, min(1.0, cover_position_x))
+        if cover_position_y is not None:
+            salon.cover_position_y = max(0.0, min(1.0, cover_position_y))
+
         db.commit()
 
         if profile_image and old_profile_filename:
@@ -306,6 +313,8 @@ async def upload_account_media_(
         return {
             "profile_picture_url": profile_url,
             "cover_ads_url": cover_url,
+            "cover_position_x": salon.cover_position_x,
+            "cover_position_y": salon.cover_position_y,
             "status": "Successfully Updated"
         }
 

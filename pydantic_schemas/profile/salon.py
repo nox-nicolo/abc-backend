@@ -39,6 +39,8 @@ class SalonWorkingHourResponse(BaseModel):
 class SalonGalleryResponse(BaseModel):
     id: str
     file_name: str
+    category: str = "general"
+    position: int = 0
     image_url: Optional[str] = None # New field
 
     class Config:
@@ -57,6 +59,8 @@ class SalonProfileResponse(BaseModel):
     slogan: Optional[str]
     description: Optional[str]
     displayAds: Optional[str]
+    coverPositionX: float = 0.5
+    coverPositionY: float = 0.5
     profileCompletion: float
 
     # Media

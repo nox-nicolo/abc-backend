@@ -159,6 +159,7 @@
 
 
 import logging
+import json
 import os
 from uuid import uuid4
 from typing import List, Optional
@@ -181,14 +182,52 @@ def _delete_r2_file(file_name: str):
     delete_file(path)
 
 
+def _normalise_form_list(values: Optional[List[str]]) -> list[str]:
+    normalised: list[str] = []
+    for value in values or []:
+        if not value:
+            continue
+        normalised.extend([item.strip() for item in value.split(",") if item.strip()])
+    return normalised
+
+
+def _parse_json_object(value: str | None) -> dict:
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _parse_json_list(value: str | None) -> list:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
 async def manage_salon_gallery_(
     db: Session,
     user_id: str,
     files: Optional[List[UploadFile]] = None,
     delete_ids: Optional[List[str]] = None,
+    gallery_order: str | None = None,
+    gallery_categories: str | None = None,
+    new_file_categories: str | None = None,
 ):
     files = files or []
-    delete_ids = delete_ids or []
+    delete_ids = _normalise_form_list(delete_ids)
+    category_by_id = {
+        str(key): str(value or "general")
+        for key, value in _parse_json_object(gallery_categories).items()
+    }
+    ordered_ids = [str(item) for item in _parse_json_list(gallery_order)]
+    new_categories = [str(item or "general") for item in _parse_json_list(new_file_categories)]
 
     salon = db.query(Salon).filter(Salon.user_id == user_id).first()
     if not salon:
@@ -209,6 +248,16 @@ async def manage_salon_gallery_(
 
         db.flush()
 
+    existing_items = db.query(SalonGallery).filter(
+        SalonGallery.salon_id == salon.id
+    ).all()
+
+    for item in existing_items:
+        if item.id in category_by_id:
+            item.category = category_by_id[item.id][:60] or "general"
+        if item.id in ordered_ids:
+            item.position = ordered_ids.index(item.id)
+
     current_count = db.query(SalonGallery).filter(
         SalonGallery.salon_id == salon.id
     ).count()
@@ -219,7 +268,8 @@ async def manage_salon_gallery_(
             detail=f"Limit exceeded. You can only add {MAX_GALLERY_IMAGES - current_count} more images."
         )
 
-    for file in files:
+    next_position = len(ordered_ids)
+    for index, file in enumerate(files):
         ext = os.path.splitext(file.filename)[1].lower()
         file_name = f"{uuid4()}{ext}"
         r2_path = f"{GALLERY_DIR}{file_name}"
@@ -230,7 +280,9 @@ async def manage_salon_gallery_(
             gallery_item = SalonGallery(
                 id=str(uuid4()),
                 salon_id=salon.id,
-                file_name=file_name
+                file_name=file_name,
+                category=(new_categories[index] if index < len(new_categories) else "general")[:60],
+                position=next_position + index,
             )
             db.add(gallery_item)
 
@@ -243,7 +295,7 @@ async def manage_salon_gallery_(
 
         full_gallery = db.query(SalonGallery).filter(
             SalonGallery.salon_id == salon.id
-        ).all()
+        ).order_by(SalonGallery.position.asc(), SalonGallery.created_at.asc()).all()
 
         for item in full_gallery:
             item.image_url = f"{GALLERY_URL}{item.file_name}"

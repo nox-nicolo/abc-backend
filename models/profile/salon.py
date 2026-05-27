@@ -26,6 +26,8 @@ class Salon(Base):
 
     # System
     profile_completion = Column(FLOAT, default=0.0, nullable=False)
+    cover_position_x = Column(FLOAT, default=0.5, nullable=False)
+    cover_position_y = Column(FLOAT, default=0.5, nullable=False)
     user_id = Column(
         String(36),
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -72,10 +74,17 @@ class SalonGallery(Base):
 # -------------------------------------------------------------------
     salon_id = Column(String(36), ForeignKey("salons.id", onupdate="CASCADE",  ondelete="CASCADE"), nullable=False,)
     file_name = Column(String(200), nullable=False)
+    category = Column(String(60), default="general", nullable=False)
+    position = Column(INTEGER, default=0, nullable=False)
 
     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
 
     salon = relationship("Salon", back_populates="galleries")
+
+    __table_args__ = (
+        Index("ix_salon_galleries_salon_position", "salon_id", "position"),
+        Index("ix_salon_galleries_salon_category", "salon_id", "category"),
+    )
     
 #                               END
 # -------------------------------------------------------------------
