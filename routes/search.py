@@ -7,10 +7,10 @@ from core.database import get_db
 from models.search.search import SearchHistory
 from pydantic_schemas.auth.jwt_token import TokenData
 from pydantic_schemas.search.hashtag import HashtagGridOut
-from pydantic_schemas.search.search import SaveSearchHistoryRequest, SaveSearchHistoryResponse, SearchResponse
+from pydantic_schemas.search.search import SearchHistoryResponse, SaveSearchHistoryRequest, SaveSearchHistoryResponse, SearchResponse
 from service.auth.JWT.oauth2 import get_current_user
 from service.search.discover import get_nearby_salons, get_top_salons, get_trending_styles
-from service.search.search import search_
+from service.search.search import clear_search_history_, delete_search_history_item_, list_search_history_, save_search_history_, search_
 from service.search.hashtag import get_hashtag_grid_
 from service.search.queries import search_share_users
 
@@ -79,6 +79,71 @@ async def users_for_sharing(
         )
     )
     
+
+@search.get(
+    "/history",
+    response_model=SearchHistoryResponse,
+    summary="List recent search history",
+)
+def list_search_history(
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    return list_search_history_(
+        db=db,
+        user_id=current_user.user_id,
+        limit=limit,
+    )
+
+
+@search.post(
+    "/history",
+    response_model=SaveSearchHistoryResponse,
+    summary="Save a search history entry",
+)
+async def save_search_history(
+    payload: SaveSearchHistoryRequest,
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    return await save_search_history_(
+        db=db,
+        user_id=current_user.user_id,
+        query=payload.query,
+        entity=payload.entity,
+        entity_id=payload.entity_id,
+    )
+
+
+@search.delete(
+    "/history",
+    response_model=SaveSearchHistoryResponse,
+    summary="Clear all search history",
+)
+def clear_search_history(
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    return clear_search_history_(db=db, user_id=current_user.user_id)
+
+
+@search.delete(
+    "/history/{history_id}",
+    response_model=SaveSearchHistoryResponse,
+    summary="Delete one search history entry",
+)
+def delete_search_history_item(
+    history_id: str,
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+):
+    return delete_search_history_item_(
+        db=db,
+        user_id=current_user.user_id,
+        history_id=history_id,
+    )
+
 
 # ── Discovery endpoints (idle search screen) ────────────────────────────────
 

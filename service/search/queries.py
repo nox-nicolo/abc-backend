@@ -12,6 +12,7 @@
 # from models.auth.user import User
 # from models.posts.posts import Hashtag
 # from models.profile.salon import Salon, SalonServicePrice
+# from models.saved import SavedSalon, SavedService
 # from models.services.service import Services, SubServices
 
 # from pydantic_schemas.search.search import (
@@ -426,6 +427,7 @@ from models.profile.salon import (
     SalonServicePrice,
     SalonWorkingHour,
 )
+from models.saved import SavedSalon, SavedService
 from models.services.service import Services, SubServices
 
 from pydantic_schemas.search.search import (
@@ -483,6 +485,35 @@ def clean_query(q: str) -> str:
 def safe_parent_service_name(sub: SubServices) -> str | None:
     parent = getattr(sub, "service", None) or getattr(sub, "services", None)
     return getattr(parent, "name", None)
+
+
+def _is_saved_salon(db: Session, user_id: str, salon_id: str) -> bool:
+    return (
+        db.query(SavedSalon.id)
+        .filter(SavedSalon.user_id == user_id, SavedSalon.salon_id == salon_id)
+        .first()
+        is not None
+    )
+
+
+def _is_saved_service(
+    db: Session,
+    user_id: str,
+    *,
+    service_id: str | None = None,
+    sub_service_id: str | None = None,
+    salon_service_price_id: str | None = None,
+) -> bool:
+    query = db.query(SavedService.id).filter(SavedService.user_id == user_id)
+    if salon_service_price_id:
+        query = query.filter(SavedService.salon_service_price_id == salon_service_price_id)
+    elif sub_service_id:
+        query = query.filter(SavedService.sub_service_id == sub_service_id)
+    elif service_id:
+        query = query.filter(SavedService.service_id == service_id)
+    else:
+        return False
+    return query.first() is not None
 
 
 # ---------------------------
@@ -719,6 +750,7 @@ def search_salons(db: Session, q: str, limit: int, current_user_id: str) -> List
                 is_verified=is_verified,
                 owner_name=owner_name,
                 slogan=salon.slogan,
+                is_saved=_is_saved_salon(db, current_user_id, salon.id),
                 score=score,
             )
         )
@@ -798,10 +830,14 @@ def search_services(db: Session, q: str, limit: int, current_user_id: str) -> Li
         .options(
             joinedload(SalonServicePrice.service),
             joinedload(SalonServicePrice.sub_service),
+            joinedload(SalonServicePrice.salon),
         )
         .outerjoin(Services, SalonServicePrice.service_id == Services.id)
         .outerjoin(SubServices, SalonServicePrice.sub_service_id == SubServices.id)
-        .filter(Salon.user_id != current_user_id)
+        .filter(
+            Salon.user_id != current_user_id,
+            SalonServicePrice.status == ServiceCreatedStatus.ACTIVE,
+        )
     )
 
     if not price_only:
@@ -849,7 +885,17 @@ def search_services(db: Session, q: str, limit: int, current_user_id: str) -> Li
                         parent_service_name=parent_name,
                         price_min=row.price_min,
                         price_max=row.price_max,
+                        currency=row.currency,
+                        duration_minutes=row.duration_minutes,
                         image_url=minor_url + row.sub_service.file_name,
+                        salon_id=row.salon_id,
+                        salon_name=row.salon.title if row.salon else None,
+                        salon_service_price_id=row.id,
+                        is_saved=_is_saved_service(
+                            db,
+                            current_user_id,
+                            salon_service_price_id=row.id,
+                        ),
                         score=score,
                     )
                 )
@@ -874,7 +920,17 @@ def search_services(db: Session, q: str, limit: int, current_user_id: str) -> Li
                         parent_service_name=None,
                         price_min=row.price_min,
                         price_max=row.price_max,
+                        currency=row.currency,
+                        duration_minutes=row.duration_minutes,
                         image_url=major_url + row.service.service_picture,
+                        salon_id=row.salon_id,
+                        salon_name=row.salon.title if row.salon else None,
+                        salon_service_price_id=row.id,
+                        is_saved=_is_saved_service(
+                            db,
+                            current_user_id,
+                            salon_service_price_id=row.id,
+                        ),
                         score=score,
                     )
                 )
@@ -910,6 +966,11 @@ def search_services(db: Session, q: str, limit: int, current_user_id: str) -> Li
                 price_min=None,
                 price_max=None,
                 image_url=major_url + service.service_picture,
+                is_saved=_is_saved_service(
+                    db,
+                    current_user_id,
+                    service_id=service.id,
+                ),
                 score=score,
             )
         )
@@ -943,6 +1004,11 @@ def search_services(db: Session, q: str, limit: int, current_user_id: str) -> Li
                 price_min=None,
                 price_max=None,
                 image_url=minor_url + sub.file_name,
+                is_saved=_is_saved_service(
+                    db,
+                    current_user_id,
+                    sub_service_id=sub.id,
+                ),
                 score=score,
             )
         )

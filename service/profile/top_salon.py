@@ -143,11 +143,10 @@ from models.auth.user import User
 from models.profile.salon import (
     Salon,
     SalonFollower,
-    Rate,
     SalonLocation,
 )
 from models.posts.posts import Post
-from models.booking.booking import Booking, BookingStatus
+from models.booking.booking import Booking, BookingStatus, ServiceReview
 from pydantic_schemas.pagination import pagination_meta
 from pydantic_schemas.profile.top_salon import TopSalonCard
 
@@ -181,10 +180,10 @@ def get_top_salons(
 
     ratings_sq = (
         db.query(
-            Rate.salon_id,
-            func.coalesce(func.avg(Rate.value), 0).label("avg_rating"),
+            ServiceReview.salon_id,
+            func.coalesce(func.avg(ServiceReview.rating), 0).label("avg_rating"),
         )
-        .group_by(Rate.salon_id)
+        .group_by(ServiceReview.salon_id)
         .subquery()
     )
 

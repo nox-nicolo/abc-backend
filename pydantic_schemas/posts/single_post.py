@@ -67,6 +67,7 @@ class SimilarSection(BaseModel):
 class SponsoredSalonSection(BaseModel):
     salon_id: str
     name: str
+    image_url: Optional[str] = None
     location: Optional[str]
     rating: Optional[float]
     price: Optional[float]

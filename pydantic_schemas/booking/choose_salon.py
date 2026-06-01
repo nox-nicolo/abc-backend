@@ -32,3 +32,21 @@ from typing import List
 class SalonOfferListResponse(BaseModel):
     results: List[SalonOfferForBooking]
     pagination: PaginationMeta
+
+
+class BookingStylistOption(BaseModel):
+    stylist_id: str
+    user_id: str
+    name: str
+    title: Optional[str] = None
+    bio: Optional[str] = None
+    image: Optional[str] = None
+    rating: float = 0.0
+    reviews_count: int = 0
+    is_recommended: bool = False
+    recommendation_reason: Optional[str] = None
+
+
+class BookingStylistOptionListResponse(BaseModel):
+    results: List[BookingStylistOption]
+    pagination: PaginationMeta

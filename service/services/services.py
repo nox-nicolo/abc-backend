@@ -286,6 +286,7 @@ from core.r2_config import BASE_URL, upload_file
 from models.services.service import Services, SubServices
 from pydantic_schemas.pagination import pagination_meta
 from pydantic_schemas.services.service import ChooseServiceRequest, DetailsServicesRequest
+from service.booking.ratings import service_rating_summary, sub_service_rating_summary
 
 
 ImageDirMajor = ImageDirectories.SERVICE_DIR.value + "major/"
@@ -295,6 +296,10 @@ MAJOR_IMAGE_URL = f"{BASE_URL}/{ImageDirMajor}"
 MINOR_IMAGE_URL = f"{BASE_URL}/{ImageDirMinor}"
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".svg", ".webp", ".tiff"}
+
+
+def _rated_average(summary: dict) -> float:
+    return summary["average"] if summary["count"] > 0 else 0.0
 
 
 async def all_services(
@@ -340,7 +345,9 @@ async def _get_major(
                 if service.service_picture else None
             ),
             "description": service.description,
-            "rated": service.rated,
+            "rated": _rated_average(
+                service_rating_summary(db, service_id=service.id)
+            ),
         })
 
     return {
@@ -443,7 +450,9 @@ async def _get_minor(
             "name": sub_service.name,
             "fileName": file_url,
             "description": description,
-            "rated": sub_service.rated,
+            "rated": _rated_average(
+                sub_service_rating_summary(db, sub_service_id=sub_service.id)
+            ),
         })
 
     return {

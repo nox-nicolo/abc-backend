@@ -39,6 +39,10 @@ celery_app.conf.beat_schedule = {
         "task": "worker.tasks.expire_pending_bookings",
         "schedule": crontab(minute="*"),
     },
+    "mark-no-show-bookings-every-minute": {
+        "task": "worker.tasks.mark_no_show_bookings",
+        "schedule": crontab(minute="*"),
+    },
     "refresh-top-salon-ranking-every-15-minutes": {
         "task": "worker.tasks.refresh_top_salon_ranking",
         "schedule": crontab(minute="*/15"),

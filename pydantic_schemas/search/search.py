@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Literal, Union
 from pydantic import BaseModel
 
@@ -8,7 +9,7 @@ from typing import Literal
 class SaveSearchHistoryRequest(BaseModel):
     query: str
     entity: Literal["user", "salon", "service", "hashtag", "post", "query"]
-    entity_id: int | None = None
+    entity_id: str | None = None
 
 
 class SearchBase(BaseModel):
@@ -33,6 +34,7 @@ class SearchSalonResult(SearchBase):
     cover_image: str | None = None
     is_verified: bool
     owner_name: str
+    is_saved: bool = False
     
 
 class SearchHashtagResult(SearchBase):
@@ -48,7 +50,13 @@ class SearchServiceResult(SearchBase):
     parent_service_name: str | None = None
     price_min: float | None = None
     price_max: float | None = None
+    currency: str | None = None
+    duration_minutes: int | None = None
     image_url: str | None = None
+    salon_id: str | None = None
+    salon_name: str | None = None
+    salon_service_price_id: str | None = None
+    is_saved: bool = False
 
 
 SearchResult = Union[
@@ -60,8 +68,24 @@ SearchResult = Union[
 
 class SearchResponse(BaseModel):
     results: List[SearchResult]
+    next_cursor: str | None = None
 
 
 
 class SaveSearchHistoryResponse(BaseModel):
     success: bool
+
+
+class SearchHistoryItem(BaseModel):
+    id: str
+    query: str
+    entity: str
+    entity_id: str | None = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SearchHistoryResponse(BaseModel):
+    items: List[SearchHistoryItem]

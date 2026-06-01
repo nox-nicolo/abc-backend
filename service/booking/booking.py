@@ -4,16 +4,25 @@ from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_, func
+from sqlalchemy import and_, case, func, or_, text
 
 from core.enumeration import BookingStatus, ImageURL, ServiceCreatedStatus
-from models.booking.booking import Booking
-from models.profile.salon import Salon, SalonAvailabilityOverride, SalonLocation, SalonServicePrice, SalonWorkingHour
+from models.booking.booking import Booking, BookingEvent
+from models.profile.salon import (
+    Salon,
+    SalonAvailabilityOverride,
+    SalonLocation,
+    SalonServicePrice,
+    SalonStylist,
+    SalonWorkingHour,
+    StylistService,
+)
 from models.auth.user import User
 
 from models.booking.booking import ServiceReview
 from models.services.service import SubServices
 from pydantic_schemas.booking.booking import (
+    BookingEventResponse,
     BookingCreate,
     BookingCancel,
     BookingReschedule,
@@ -21,7 +30,7 @@ from pydantic_schemas.booking.booking import (
 )
 from pydantic_schemas.pagination import pagination_meta
 
-from pydantic_schemas.booking.choose_salon import SalonOfferForBooking
+from pydantic_schemas.booking.choose_salon import BookingStylistOption, SalonOfferForBooking
 from service.booking.helper import (
     _auto_expire_pending,
     _auto_no_show,
@@ -41,6 +50,7 @@ from service.account.enforcement import is_blocked_between, salon_booking_rules_
 
 
 salon_url = ImageURL.SALON_COVER_URL.value
+profile_url = ImageURL.PROFILE_URL.value
 SALON_TIMEZONE = ZoneInfo("Africa/Dar_es_Salaam")
 MIN_BOOKING_LEAD_MINUTES = 15
 ACTIVE_BOOKING_STATUSES = (BookingStatus.PENDING, BookingStatus.CONFIRMED)
@@ -84,6 +94,33 @@ def expire_pending_bookings_for_scope(
     return expired
 
 
+def mark_no_show_bookings_for_scope(
+    db: Session,
+    *,
+    customer_id: Optional[str] = None,
+    salon_id: Optional[str] = None,
+) -> int:
+    query = (
+        db.query(Booking)
+        .filter(
+            Booking.status == BookingStatus.CONFIRMED,
+            Booking.end_at < _now(),
+        )
+    )
+    if customer_id is not None:
+        query = query.filter(Booking.customer_id == customer_id)
+    if salon_id is not None:
+        query = query.filter(Booking.salon_id == salon_id)
+
+    marked = 0
+    for booking in query.all():
+        before = booking.status
+        _auto_no_show(booking)
+        if booking.status != before:
+            marked += 1
+    return marked
+
+
 def _assert_transition(
     booking: Booking,
     target_status: BookingStatus,
@@ -103,6 +140,40 @@ def _validate_bookable_offering(offering: SalonServicePrice) -> None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Service duration not configured")
     if offering.concurrent_capacity is not None and offering.concurrent_capacity < 1:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Service capacity is not configured")
+
+
+def _validate_booking_stylist(
+    db: Session,
+    *,
+    stylist_id: Optional[str],
+    salon_id: str,
+    salon_service_price_id: str,
+) -> None:
+    if stylist_id is None:
+        return
+
+    stylist = (
+        db.query(SalonStylist)
+        .filter(
+            SalonStylist.id == stylist_id,
+            SalonStylist.salon_id == salon_id,
+            SalonStylist.is_active.is_(True),
+        )
+        .first()
+    )
+    if not stylist:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Selected stylist is not available")
+
+    can_perform_service = (
+        db.query(StylistService.id)
+        .filter(
+            StylistService.stylist_id == stylist_id,
+            StylistService.salon_service_price_id == salon_service_price_id,
+        )
+        .first()
+    )
+    if not can_perform_service:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Selected stylist does not offer this service")
 
 
 def _validate_future_start(start_at: datetime, message: str, minimum_notice_hours: int | None = None) -> None:
@@ -130,6 +201,140 @@ def _aware_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value
+
+
+def _advisory_lock_key(*parts: object) -> str:
+    return ":".join(str(part) for part in parts if part is not None)
+
+
+def _pg_advisory_xact_lock(db: Session, key: str) -> None:
+    bind = db.get_bind()
+    if bind.dialect.name != "postgresql":
+        return
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": key},
+    )
+
+
+def _lock_booking_slot(
+    db: Session,
+    *,
+    salon_service_price_id: str,
+    start_at: datetime,
+    stylist_id: Optional[str] = None,
+) -> None:
+    local_day = _aware_utc(start_at).astimezone(SALON_TIMEZONE).date().isoformat()
+    _pg_advisory_xact_lock(
+        db,
+        _advisory_lock_key("booking", "offering", salon_service_price_id, local_day),
+    )
+    if stylist_id is not None:
+        _pg_advisory_xact_lock(
+            db,
+            _advisory_lock_key("booking", "stylist", stylist_id, local_day),
+        )
+
+
+def _booking_service_label(booking: Booking) -> str:
+    return booking.service_name_snapshot or "your service"
+
+
+def _booking_salon_label(booking: Booking) -> str:
+    return booking.salon.title if booking.salon else "the salon"
+
+
+def _booking_customer_label(booking: Booking) -> str:
+    return booking.customer.name if booking.customer else "The customer"
+
+
+def _booking_rejected_message(booking: Booking) -> str:
+    return (
+        f"{_booking_salon_label(booking)} could not accept your booking request "
+        f"for {_booking_service_label(booking)}. Please choose another time or try another stylist."
+    )
+
+
+def _booking_customer_cancelled_message(booking: Booking) -> str:
+    reason = (booking.cancel_reason or "").strip()
+    reason_text = f" Reason: {reason}" if reason else ""
+    return (
+        f"{_booking_customer_label(booking)} cancelled the booking for "
+        f"{_booking_service_label(booking)}.{reason_text}"
+    )
+
+
+def _booking_no_show_message(booking: Booking) -> str:
+    return (
+        f"{_booking_salon_label(booking)} marked your booking for "
+        f"{_booking_service_label(booking)} as no-show. If this looks wrong, contact the salon."
+    )
+
+
+def _status_value(status_value) -> Optional[str]:
+    if status_value is None:
+        return None
+    return getattr(status_value, "value", str(status_value))
+
+
+def _booking_event_snapshot(booking: Booking) -> dict:
+    return {
+        "customer_id": booking.customer_id,
+        "salon_id": booking.salon_id,
+        "salon_service_price_id": booking.salon_service_price_id,
+        "stylist_id": booking.stylist_id,
+        "start_at": booking.start_at.isoformat() if booking.start_at else None,
+        "end_at": booking.end_at.isoformat() if booking.end_at else None,
+        "service_name": booking.service_name_snapshot,
+    }
+
+
+def _record_booking_event(
+    db: Session,
+    *,
+    booking: Booking,
+    event_type: str,
+    actor_id: Optional[str],
+    from_status=None,
+    to_status=None,
+    metadata: Optional[dict] = None,
+) -> BookingEvent:
+    event_metadata = _booking_event_snapshot(booking)
+    if metadata:
+        event_metadata.update(metadata)
+    event = BookingEvent(
+        booking_id=booking.id,
+        actor_id=actor_id,
+        event_type=event_type,
+        from_status=_status_value(from_status),
+        to_status=_status_value(to_status if to_status is not None else booking.status),
+        event_metadata=event_metadata,
+    )
+    db.add(event)
+    return event
+
+
+def _busy_stylist_subquery(
+    db: Session,
+    *,
+    start_at: datetime,
+    end_at: datetime,
+    exclude_booking_id: str = None,
+    buffer_minutes: int = 0,
+):
+    buffer_delta = timedelta(minutes=max(buffer_minutes or 0, 0))
+    query = (
+        db.query(Booking.stylist_id.label("stylist_id"))
+        .filter(
+            Booking.stylist_id.isnot(None),
+            Booking.status.in_(ACTIVE_BOOKING_STATUSES),
+            Booking.start_at < end_at + buffer_delta,
+            Booking.end_at > start_at - buffer_delta,
+        )
+    )
+    if exclude_booking_id:
+        query = query.filter(Booking.id != exclude_booking_id)
+    return query.distinct().subquery()
 
 
 # ---------------------------------------------------------
@@ -184,6 +389,12 @@ async def create_booking_service(
         rules.minimum_notice_hours,
     )
     _validate_bookable_offering(offering)
+    _validate_booking_stylist(
+        db,
+        stylist_id=payload.stylist_id,
+        salon_id=offering.salon_id,
+        salon_service_price_id=offering.id,
+    )
 
     end_at = payload.start_at + timedelta(minutes=offering.duration_minutes)
 
@@ -192,6 +403,13 @@ async def create_booking_service(
         salon_id=offering.salon_id,
         start_at=payload.start_at,
         end_at=end_at,
+    )
+
+    _lock_booking_slot(
+        db,
+        salon_service_price_id=offering.id,
+        stylist_id=payload.stylist_id,
+        start_at=payload.start_at,
     )
 
     capacity = offering.concurrent_capacity or 1
@@ -207,11 +425,23 @@ async def create_booking_service(
             status.HTTP_409_CONFLICT,
             "This time slot is fully booked, please choose another time",
         )
+    if _has_stylist_overlap(
+        db,
+        payload.stylist_id,
+        payload.start_at,
+        end_at,
+        buffer_minutes=rules.buffer_minutes,
+    ):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Selected stylist is already booked at this time",
+        )
 
     booking = Booking(
         customer_id=user_id,
         salon_id=offering.salon_id,
         salon_service_price_id=offering.id,
+        stylist_id=payload.stylist_id,
 
         start_at=payload.start_at,
         end_at=end_at,
@@ -232,6 +462,25 @@ async def create_booking_service(
 
     db.add(booking)
     db.flush()
+    _record_booking_event(
+        db,
+        booking=booking,
+        event_type="created",
+        actor_id=user_id,
+        from_status=None,
+        to_status=booking.status,
+        metadata={"auto_confirmed": bool(rules.auto_confirm)},
+    )
+    if rules.auto_confirm:
+        _record_booking_event(
+            db,
+            booking=booking,
+            event_type="confirmed",
+            actor_id=salon.user_id if salon else None,
+            from_status=BookingStatus.PENDING,
+            to_status=BookingStatus.CONFIRMED,
+            metadata={"auto_confirmed": True},
+        )
 
     # Notify salon owner that a new booking came in.
     salon = salon or db.query(Salon).filter(Salon.id == offering.salon_id).first()
@@ -272,7 +521,11 @@ async def get_user_bookings_service(
 
     query = (
         db.query(Booking)
-        .options(joinedload(Booking.review))
+        .options(
+            joinedload(Booking.customer),
+            joinedload(Booking.review),
+            joinedload(Booking.stylist).joinedload(SalonStylist.user).joinedload(User.profile_picture),
+        )
         .filter(Booking.customer_id == user_id)
     )
 
@@ -316,7 +569,11 @@ async def get_booking_service(
 
     booking = (
         db.query(Booking)
-        .options(joinedload(Booking.salon), joinedload(Booking.review))
+        .options(
+            joinedload(Booking.salon),
+            joinedload(Booking.review),
+            joinedload(Booking.stylist).joinedload(SalonStylist.user).joinedload(User.profile_picture),
+        )
         .filter(Booking.id == booking_id)
         .first()
     )
@@ -337,6 +594,32 @@ async def get_booking_service(
     db.commit()
 
     return booking
+
+
+async def get_booking_events_service(
+    *,
+    db: Session,
+    booking_id: str,
+    user_id: str,
+) -> List[BookingEventResponse]:
+    booking = (
+        db.query(Booking)
+        .options(joinedload(Booking.salon))
+        .filter(Booking.id == booking_id)
+        .first()
+    )
+    if not booking:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Booking not found")
+    if booking.customer_id != user_id and booking.salon.user_id != user_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Access denied")
+
+    events = (
+        db.query(BookingEvent)
+        .filter(BookingEvent.booking_id == booking_id)
+        .order_by(BookingEvent.created_at.asc())
+        .all()
+    )
+    return [BookingEventResponse.model_validate(event) for event in events]
 
 
 # ---------------------------------------------------------
@@ -382,9 +665,19 @@ async def cancel_booking_service(
             f"Bookings must be cancelled at least {rules.cancel_window_hours} hours before start time",
         )
 
+    previous_status = booking.status
     booking.status = BookingStatus.CANCELLED
     booking.cancelled_by = "user"
     booking.cancel_reason = payload.reason
+    _record_booking_event(
+        db,
+        booking=booking,
+        event_type="cancelled",
+        actor_id=user_id,
+        from_status=previous_status,
+        to_status=BookingStatus.CANCELLED,
+        metadata={"reason": payload.reason},
+    )
 
     # Notify salon owner that the customer cancelled.
     salon = db.query(Salon).filter(Salon.id == booking.salon_id).first()
@@ -395,6 +688,7 @@ async def cancel_booking_service(
             actor_id=user_id,
             type="booking_cancelled",
             booking_id=booking.id,
+            message=_booking_customer_cancelled_message(booking),
             commit=False,
         )
 
@@ -430,7 +724,15 @@ async def get_salon_bookings_service(
     if expired:
         db.commit()
 
-    query = db.query(Booking).filter(Booking.salon_id == salon.id)
+    query = (
+        db.query(Booking)
+        .options(
+            joinedload(Booking.customer),
+            joinedload(Booking.review),
+            joinedload(Booking.stylist).joinedload(SalonStylist.user).joinedload(User.profile_picture),
+        )
+        .filter(Booking.salon_id == salon.id)
+    )
 
     if status:
         query = query.filter(Booking.status == status)
@@ -491,6 +793,7 @@ async def confirm_booking_service(
     booking = db.query(Booking).options(
         joinedload(Booking.customer),
         joinedload(Booking.salon),
+        joinedload(Booking.stylist).joinedload(SalonStylist.user).joinedload(User.profile_picture),
     ).filter(Booking.id == booking_id).first()
     if not booking:
         raise HTTPException(
@@ -516,7 +819,16 @@ async def confirm_booking_service(
     if _is_past_or_now(booking.start_at):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Too late to confirm booking")
 
+    previous_status = booking.status
     booking.status = BookingStatus.CONFIRMED
+    _record_booking_event(
+        db,
+        booking=booking,
+        event_type="confirmed",
+        actor_id=user_id,
+        from_status=previous_status,
+        to_status=BookingStatus.CONFIRMED,
+    )
 
     pref = (
         db.query(UserNotificationPreference)
@@ -561,6 +873,88 @@ async def confirm_booking_service(
     return booking
 
 
+async def assign_booking_stylist_service(
+    *,
+    db: Session,
+    booking_id: str,
+    user_id: str,
+    stylist_id: Optional[str],
+) -> Booking:
+    booking = (
+        db.query(Booking)
+        .options(
+            joinedload(Booking.salon),
+            joinedload(Booking.salon_service_price),
+            joinedload(Booking.stylist).joinedload(SalonStylist.user).joinedload(User.profile_picture),
+        )
+        .filter(Booking.id == booking_id)
+        .with_for_update()
+        .first()
+    )
+    if not booking:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Booking not found")
+
+    if booking.salon.user_id != user_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your salon")
+
+    if booking.status not in ACTIVE_BOOKING_STATUSES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Booking cannot be assigned a stylist")
+
+    if _is_past_or_now(booking.end_at):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Too late to assign stylist")
+
+    offering = booking.salon_service_price
+    if not offering:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Service offering not found")
+
+    _validate_bookable_offering(offering)
+    _validate_booking_stylist(
+        db,
+        stylist_id=stylist_id,
+        salon_id=booking.salon_id,
+        salon_service_price_id=booking.salon_service_price_id,
+    )
+
+    rules = salon_booking_rules_for_salon(db, booking.salon_id)
+    _lock_booking_slot(
+        db,
+        salon_service_price_id=booking.salon_service_price_id,
+        stylist_id=stylist_id,
+        start_at=booking.start_at,
+    )
+
+    if _has_stylist_overlap(
+        db,
+        stylist_id,
+        booking.start_at,
+        booking.end_at,
+        exclude_booking_id=booking.id,
+        buffer_minutes=rules.buffer_minutes,
+    ):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Selected stylist is already booked at this time",
+        )
+
+    previous_stylist_id = booking.stylist_id
+    booking.stylist_id = stylist_id
+    _record_booking_event(
+        db,
+        booking=booking,
+        event_type="stylist_assigned",
+        actor_id=user_id,
+        from_status=booking.status,
+        to_status=booking.status,
+        metadata={
+            "previous_stylist_id": previous_stylist_id,
+            "stylist_id": stylist_id,
+        },
+    )
+    db.commit()
+    db.refresh(booking)
+    return booking
+
+
 # ---------------------------------------------------------
 # Reject booking (salon)
 # ---------------------------------------------------------
@@ -574,7 +968,10 @@ async def reject_booking_service(
 
     booking = (
         db.query(Booking)
-        .options(joinedload(Booking.salon))
+        .options(
+            joinedload(Booking.salon),
+            joinedload(Booking.stylist).joinedload(SalonStylist.user).joinedload(User.profile_picture),
+        )
         .filter(Booking.id == booking_id)
         .first()
     )
@@ -602,7 +999,16 @@ async def reject_booking_service(
     if _is_past_or_now(booking.start_at):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Too late to reject booking")
 
+    previous_status = booking.status
     booking.status = BookingStatus.REJECTED
+    _record_booking_event(
+        db,
+        booking=booking,
+        event_type="rejected",
+        actor_id=user_id,
+        from_status=previous_status,
+        to_status=BookingStatus.REJECTED,
+    )
 
     create_notification(
         db=db,
@@ -610,6 +1016,7 @@ async def reject_booking_service(
         actor_id=user_id,
         type="booking_rejected",
         booking_id=booking.id,
+        message=_booking_rejected_message(booking),
         commit=False,
     )
 
@@ -632,7 +1039,10 @@ async def complete_booking_service(
 
     booking = (
         db.query(Booking)
-        .options(joinedload(Booking.salon))
+        .options(
+            joinedload(Booking.salon),
+            joinedload(Booking.stylist).joinedload(SalonStylist.user).joinedload(User.profile_picture),
+        )
         .filter(Booking.id == booking_id)
         .first()
     )
@@ -649,20 +1059,35 @@ async def complete_booking_service(
         )
 
     _assert_transition(booking, BookingStatus.COMPLETED, "Booking cannot be completed")
-    if _is_future(booking.start_at):
+    if _is_future(booking.end_at):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            "Booking has not started yet",
+            "Booking has not ended yet",
         )
 
+    previous_status = booking.status
     booking.status = BookingStatus.COMPLETED
+    _record_booking_event(
+        db,
+        booking=booking,
+        event_type="completed",
+        actor_id=user_id,
+        from_status=previous_status,
+        to_status=BookingStatus.COMPLETED,
+    )
 
+    service_name = booking.service_name_snapshot or "your service"
+    salon_name = booking.salon.title if booking.salon else "the salon"
     create_notification(
         db=db,
         recipient_id=booking.customer_id,
         actor_id=user_id,
         type="booking_completed",
         booking_id=booking.id,
+        message=(
+            f"{salon_name} marked {service_name} as complete. "
+            "You can leave an optional review when you are ready."
+        ),
         commit=False,
     )
 
@@ -678,6 +1103,7 @@ async def get_availability_slots_service(
     salon_service_price_id: str,
     start_date: DateType | None = None,
     days: int = 14,
+    stylist_id: Optional[str] = None,
 ) -> dict:
     offering = (
         db.query(SalonServicePrice)
@@ -686,8 +1112,13 @@ async def get_availability_slots_service(
     )
     if not offering:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Service offering not found")
-    if offering.duration_minutes is None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Service duration not configured")
+    _validate_bookable_offering(offering)
+    _validate_booking_stylist(
+        db,
+        stylist_id=stylist_id,
+        salon_id=offering.salon_id,
+        salon_service_price_id=offering.id,
+    )
     rules = salon_booking_rules_for_salon(db, offering.salon_id)
 
     days = max(1, min(days, 31))
@@ -724,7 +1155,14 @@ async def get_availability_slots_service(
                         buffer_minutes=rules.buffer_minutes,
                     )
                     remaining = capacity - overlapping
-                    if remaining > 0:
+                    stylist_busy = _has_stylist_overlap(
+                        db,
+                        stylist_id,
+                        start_utc,
+                        end_utc,
+                        buffer_minutes=rules.buffer_minutes,
+                    )
+                    if remaining > 0 and not stylist_busy:
                         slots.append(
                             {
                                 "start_at": start_utc,
@@ -828,6 +1266,46 @@ def _overlap_count(
     return count_q.scalar() or 0
 
 
+def _stylist_overlap_count(
+    db: Session,
+    stylist_id: str,
+    start_at: datetime,
+    end_at: datetime,
+    exclude_booking_id: str = None,
+    buffer_minutes: int = 0,
+) -> int:
+    buffer_delta = timedelta(minutes=max(buffer_minutes or 0, 0))
+    count_q = db.query(func.count(Booking.id)).filter(
+        Booking.stylist_id == stylist_id,
+        Booking.status.in_(ACTIVE_BOOKING_STATUSES),
+        Booking.start_at < end_at + buffer_delta,
+        Booking.end_at > start_at - buffer_delta,
+    )
+    if exclude_booking_id:
+        count_q = count_q.filter(Booking.id != exclude_booking_id)
+    return count_q.scalar() or 0
+
+
+def _has_stylist_overlap(
+    db: Session,
+    stylist_id: Optional[str],
+    start_at: datetime,
+    end_at: datetime,
+    exclude_booking_id: str = None,
+    buffer_minutes: int = 0,
+) -> bool:
+    if stylist_id is None:
+        return False
+    return _stylist_overlap_count(
+        db,
+        stylist_id,
+        start_at,
+        end_at,
+        exclude_booking_id,
+        buffer_minutes,
+    ) > 0
+
+
 
 
 
@@ -863,7 +1341,12 @@ async def reschedule_booking_service(
     payload: BookingReschedule,
 ) -> Booking:
 
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    booking = (
+        db.query(Booking)
+        .filter(Booking.id == booking_id)
+        .with_for_update()
+        .first()
+    )
     if not booking:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Booking not found")
 
@@ -875,7 +1358,12 @@ async def reschedule_booking_service(
     if _is_past_or_now(booking.start_at):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Too late to reschedule this booking")
 
-    offering = db.query(SalonServicePrice).filter(SalonServicePrice.id == booking.salon_service_price_id).first()
+    offering = (
+        db.query(SalonServicePrice)
+        .filter(SalonServicePrice.id == booking.salon_service_price_id)
+        .with_for_update()
+        .first()
+    )
     if not offering:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Service offering not found")
     rules = salon_booking_rules_for_salon(db, booking.salon_id)
@@ -894,6 +1382,13 @@ async def reschedule_booking_service(
         start_at=payload.start_at,
         end_at=new_end_at,
     )
+    _lock_booking_slot(
+        db,
+        salon_service_price_id=booking.salon_service_price_id,
+        stylist_id=booking.stylist_id,
+        start_at=payload.start_at,
+    )
+
     capacity = (offering.concurrent_capacity or 1) if offering else 1
     if _has_overlap(
         db,
@@ -905,10 +1400,36 @@ async def reschedule_booking_service(
         buffer_minutes=rules.buffer_minutes,
     ):
         raise HTTPException(status.HTTP_409_CONFLICT, "This time slot is fully booked")
+    if _has_stylist_overlap(
+        db,
+        booking.stylist_id,
+        payload.start_at,
+        new_end_at,
+        exclude_booking_id=booking_id,
+        buffer_minutes=rules.buffer_minutes,
+    ):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Selected stylist is already booked at this time")
 
+    previous_status = booking.status
+    previous_start_at = booking.start_at
+    previous_end_at = booking.end_at
     booking.start_at = payload.start_at
     booking.end_at = new_end_at
     booking.status = BookingStatus.PENDING  # reset to pending so salon re-confirms
+    _record_booking_event(
+        db,
+        booking=booking,
+        event_type="rescheduled",
+        actor_id=user_id,
+        from_status=previous_status,
+        to_status=BookingStatus.PENDING,
+        metadata={
+            "previous_start_at": previous_start_at.isoformat() if previous_start_at else None,
+            "previous_end_at": previous_end_at.isoformat() if previous_end_at else None,
+            "new_start_at": booking.start_at.isoformat() if booking.start_at else None,
+            "new_end_at": booking.end_at.isoformat() if booking.end_at else None,
+        },
+    )
 
     salon = db.query(Salon).filter(Salon.id == booking.salon_id).first()
     if salon:
@@ -938,7 +1459,10 @@ async def mark_no_show_service(
 ) -> Booking:
     booking = (
         db.query(Booking)
-        .options(joinedload(Booking.salon))
+        .options(
+            joinedload(Booking.salon),
+            joinedload(Booking.stylist).joinedload(SalonStylist.user).joinedload(User.profile_picture),
+        )
         .filter(Booking.id == booking_id)
         .first()
     )
@@ -952,13 +1476,23 @@ async def mark_no_show_service(
     if _is_future(booking.end_at):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Booking has not ended yet")
 
+    previous_status = booking.status
     booking.status = BookingStatus.NO_SHOW
+    _record_booking_event(
+        db,
+        booking=booking,
+        event_type="no_show",
+        actor_id=user_id,
+        from_status=previous_status,
+        to_status=BookingStatus.NO_SHOW,
+    )
     create_notification(
         db=db,
         recipient_id=booking.customer_id,
         actor_id=user_id,
         type="booking_no_show",
         booking_id=booking.id,
+        message=_booking_no_show_message(booking),
         commit=False,
     )
 
@@ -979,7 +1513,12 @@ async def create_review_service(
     payload: BookingReviewCreate,
 ) -> ServiceReview:
 
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    booking = (
+        db.query(Booking)
+        .options(joinedload(Booking.salon_service_price))
+        .filter(Booking.id == booking_id)
+        .first()
+    )
     if not booking:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Booking not found")
 
@@ -993,16 +1532,33 @@ async def create_review_service(
     if existing:
         raise HTTPException(status.HTTP_409_CONFLICT, "You already reviewed this booking")
 
+    offering = booking.salon_service_price
+    if not offering:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Booking service is no longer available for review")
+
     review = ServiceReview(
         booking_id=booking_id,
         user_id=user_id,
         salon_id=booking.salon_id,
         salon_service_price_id=booking.salon_service_price_id,
+        service_id=offering.service_id,
+        sub_service_id=offering.sub_service_id,
+        stylist_id=booking.stylist_id,
         rating=payload.rating,
         comment=payload.comment,
     )
 
     db.add(review)
+    db.flush()
+    _record_booking_event(
+        db,
+        booking=booking,
+        event_type="reviewed",
+        actor_id=user_id,
+        from_status=booking.status,
+        to_status=booking.status,
+        metadata={"review_id": review.id, "rating": payload.rating},
+    )
     db.commit()
     db.refresh(review)
     return review
@@ -1034,16 +1590,21 @@ async def get_salons_for_style(
             SubServices.id.label("sub_service_id"),
             SubServices.name.label("sub_service_name"),
 
-            # FIX HERE
-            SalonServicePrice.price_max.label("price"),
+            SalonServicePrice.price_min.label("price"),
             SalonServicePrice.currency,
             SalonServicePrice.duration_minutes,
         )
         .join(SubServices, SubServices.id == SalonServicePrice.sub_service_id)
         .join(Salon, Salon.id == SalonServicePrice.salon_id)
+        .outerjoin(SalonLocation, SalonLocation.salon_id == Salon.id)
         .filter(SalonServicePrice.sub_service_id == sub_service_id)
-        # .filter(SalonServicePrice.is_active.is_(True))
-        .order_by(SalonServicePrice.price_max.asc())
+        .filter(SalonServicePrice.status == ServiceCreatedStatus.ACTIVE)
+        .filter(SalonServicePrice.price_min.isnot(None))
+        .filter(SalonServicePrice.price_min >= 0)
+        .filter(SalonServicePrice.duration_minutes.isnot(None))
+        .filter(SalonServicePrice.duration_minutes > 0)
+        .filter(SalonServicePrice.concurrent_capacity >= 1)
+        .order_by(SalonServicePrice.price_min.asc())
     )
     total = query.count()
     rows = (
@@ -1078,4 +1639,167 @@ async def get_salons_for_style(
     return {
         "results": results,
         "pagination": pagination_meta(total=total, limit=limit, offset=offset),
+    }
+
+
+async def get_booking_stylists_for_offer(
+    *,
+    db: Session,
+    salon_service_price_id: str,
+    start_at: Optional[datetime] = None,
+    exclude_booking_id: Optional[str] = None,
+    limit: int,
+    offset: int,
+) -> dict:
+    offering = (
+        db.query(SalonServicePrice)
+        .filter(SalonServicePrice.id == salon_service_price_id)
+        .first()
+    )
+    if not offering:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Service offering not found")
+    _validate_bookable_offering(offering)
+
+    sub_service_rating_sq = (
+        db.query(
+            ServiceReview.stylist_id.label("stylist_id"),
+            func.avg(ServiceReview.rating).label("avg_rating"),
+            func.count(ServiceReview.id).label("review_count"),
+        )
+        .filter(ServiceReview.sub_service_id == offering.sub_service_id)
+        .group_by(ServiceReview.stylist_id)
+        .subquery()
+    )
+    service_rating_sq = (
+        db.query(
+            ServiceReview.stylist_id.label("stylist_id"),
+            func.avg(ServiceReview.rating).label("avg_rating"),
+            func.count(ServiceReview.id).label("review_count"),
+        )
+        .filter(ServiceReview.service_id == offering.service_id)
+        .group_by(ServiceReview.stylist_id)
+        .subquery()
+    )
+
+    avg_rating = func.coalesce(
+        sub_service_rating_sq.c.avg_rating,
+        service_rating_sq.c.avg_rating,
+        0,
+    ).label("rating")
+    review_count = func.coalesce(
+        sub_service_rating_sq.c.review_count,
+        service_rating_sq.c.review_count,
+        0,
+    ).label("reviews_count")
+    confidence = case(
+        (review_count > 20, 1.0),
+        else_=review_count / 20.0,
+    )
+    score = (avg_rating * 0.8 + confidence).label("recommendation_score")
+
+    query = (
+        db.query(
+            SalonStylist,
+            avg_rating,
+            review_count,
+            score,
+        )
+        .join(StylistService, StylistService.stylist_id == SalonStylist.id)
+        .options(joinedload(SalonStylist.user).joinedload(User.profile_picture))
+        .outerjoin(
+            sub_service_rating_sq,
+            sub_service_rating_sq.c.stylist_id == SalonStylist.id,
+        )
+        .outerjoin(
+            service_rating_sq,
+            service_rating_sq.c.stylist_id == SalonStylist.id,
+        )
+        .filter(
+            StylistService.salon_service_price_id == salon_service_price_id,
+            SalonStylist.salon_id == offering.salon_id,
+            SalonStylist.is_active.is_(True),
+        )
+    )
+
+    if start_at is not None:
+        start_at = _aware_utc(start_at)
+        end_at = start_at + timedelta(minutes=offering.duration_minutes)
+        rules = salon_booking_rules_for_salon(db, offering.salon_id)
+        busy_sq = _busy_stylist_subquery(
+            db,
+            start_at=start_at,
+            end_at=end_at,
+            exclude_booking_id=exclude_booking_id,
+            buffer_minutes=rules.buffer_minutes,
+        )
+        query = (
+            query.outerjoin(busy_sq, busy_sq.c.stylist_id == SalonStylist.id)
+            .filter(busy_sq.c.stylist_id.is_(None))
+        )
+
+    total = query.count()
+    rows = (
+        query
+        .order_by(score.desc(), review_count.desc(), SalonStylist.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    results = []
+    for index, (stylist, rating, reviews_count, _) in enumerate(rows):
+        is_recommended = offset == 0 and index == 0
+        rating = round(float(rating or 0), 2)
+        reviews_count = int(reviews_count or 0)
+        profile_file = (
+            stylist.user.profile_picture.file_name
+            if stylist.user and stylist.user.profile_picture
+            else None
+        )
+        results.append(
+            BookingStylistOption(
+                stylist_id=stylist.id,
+                user_id=stylist.user_id,
+                name=stylist.user.name if stylist.user else (stylist.title or "Stylist"),
+                title=stylist.title,
+                bio=stylist.bio,
+                image=profile_url + profile_file if profile_file else None,
+                rating=rating,
+                reviews_count=reviews_count,
+                is_recommended=is_recommended,
+                recommendation_reason=(
+                    "Recommended from reviews for this service"
+                    if is_recommended and reviews_count > 0
+                    else "Available for your selected time"
+                    if is_recommended and start_at is not None
+                    else None
+                ),
+            )
+        )
+
+    return {
+        "results": results,
+        "pagination": pagination_meta(total=total, limit=limit, offset=offset),
+    }
+
+
+def _rating_summary_for_stylist(
+    db: Session,
+    *,
+    stylist_id: str,
+    service_id: Optional[str] = None,
+    sub_service_id: Optional[str] = None,
+) -> dict:
+    query = db.query(ServiceReview).filter(ServiceReview.stylist_id == stylist_id)
+    if service_id is not None:
+        query = query.filter(ServiceReview.service_id == service_id)
+    if sub_service_id is not None:
+        query = query.filter(ServiceReview.sub_service_id == sub_service_id)
+    avg_rating, count = query.with_entities(
+        func.avg(ServiceReview.rating),
+        func.count(ServiceReview.id),
+    ).one()
+    return {
+        "average": round(float(avg_rating), 2) if avg_rating is not None else 0.0,
+        "count": int(count or 0),
     }

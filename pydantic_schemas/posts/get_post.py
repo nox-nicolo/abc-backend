@@ -27,6 +27,7 @@ class MediaSchema(BaseModel):
 
 class SalonSchema(BaseModel):
     id: str
+    salon_id: Optional[str] = None
     salon_name: str
     username: str
     display_picture: Optional[str] = None

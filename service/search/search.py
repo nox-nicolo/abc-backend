@@ -8,7 +8,7 @@ from models.search.search import SearchHistory
 from models.booking.booking import Booking
 from models.profile.salon import SalonFollower
 from models.saved import SavedSalon
-from pydantic_schemas.search.search import SaveSearchHistoryResponse, SearchResponse
+from pydantic_schemas.search.search import SearchHistoryItem, SearchHistoryResponse, SaveSearchHistoryResponse, SearchResponse
 from service.account.enforcement import customer_recommendation_controls
 
 from service.search.queries import (
@@ -26,15 +26,17 @@ async def search_(
     db: Session,
     user_id: str,   
 ) -> SearchResponse:
+    offset = _parse_cursor(cursor)
+    candidate_limit = min(limit + offset + 1, 200)
     results = []
     controls = customer_recommendation_controls(db, user_id)
 
-    # Collect candidates from all sources
-    results.extend(search_users(db, q, limit, user_id))
-    results.extend(search_salons(db, q, limit, user_id))
+    # Collect enough candidates from each source to support the final sorted page.
+    results.extend(search_users(db, q, candidate_limit, user_id))
+    results.extend(search_salons(db, q, candidate_limit, user_id))
     if controls.show_trending:
-        results.extend(search_hashtags(db, q, limit))
-    results.extend(search_services(db, q, limit, user_id))
+        results.extend(search_hashtags(db, q, candidate_limit))
+    results.extend(search_services(db, q, candidate_limit, user_id))
 
     # Final ranking (single truth)
     results.sort(
@@ -42,8 +44,19 @@ async def search_(
         reverse=True,
     )
 
-    # TODO: cursor pagination can be added later (score+id based)
-    return SearchResponse(results=results)
+    page = results[offset: offset + limit]
+    has_more = len(results) > offset + limit
+    next_cursor = str(offset + limit) if has_more else None
+    return SearchResponse(results=page, next_cursor=next_cursor)
+
+
+def _parse_cursor(cursor: str | None) -> int:
+    if not cursor:
+        return 0
+    try:
+        return max(int(cursor), 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _personalized_score(db: Session, user_id: str, result, controls) -> float:
@@ -90,11 +103,23 @@ async def save_search_history_(
     user_id: str,
     query: str,
     entity: str,
-    entity_id: str | None,  
+    entity_id: str | None,
 ) -> SaveSearchHistoryResponse:
+    clean_query = (query or "").strip()[:255]
+    if not clean_query:
+        return SaveSearchHistoryResponse(success=True)
+
+    # Keep history useful: same query/result moves to the top instead of duplicating.
+    db.query(SearchHistory).filter(
+        SearchHistory.user_id == user_id,
+        SearchHistory.query == clean_query,
+        SearchHistory.entity == entity,
+        SearchHistory.entity_id == entity_id,
+    ).delete(synchronize_session=False)
+
     history = SearchHistory(
         user_id=user_id,
-        query=query,
+        query=clean_query,
         entity=entity,
         entity_id=entity_id,
     )
@@ -102,6 +127,50 @@ async def save_search_history_(
     db.add(history)
     db.commit()
 
+    return SaveSearchHistoryResponse(success=True)
+
+
+def list_search_history_(
+    *,
+    db: Session,
+    user_id: str,
+    limit: int = 10,
+) -> SearchHistoryResponse:
+    rows = (
+        db.query(SearchHistory)
+        .filter(SearchHistory.user_id == user_id)
+        .order_by(SearchHistory.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return SearchHistoryResponse(
+        items=[SearchHistoryItem.model_validate(row) for row in rows]
+    )
+
+
+def delete_search_history_item_(
+    *,
+    db: Session,
+    user_id: str,
+    history_id: str,
+) -> SaveSearchHistoryResponse:
+    db.query(SearchHistory).filter(
+        SearchHistory.id == history_id,
+        SearchHistory.user_id == user_id,
+    ).delete(synchronize_session=False)
+    db.commit()
+    return SaveSearchHistoryResponse(success=True)
+
+
+def clear_search_history_(
+    *,
+    db: Session,
+    user_id: str,
+) -> SaveSearchHistoryResponse:
+    db.query(SearchHistory).filter(SearchHistory.user_id == user_id).delete(
+        synchronize_session=False
+    )
+    db.commit()
     return SaveSearchHistoryResponse(success=True)
 
 

@@ -196,10 +196,11 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from core.r2_config import BASE_URL
-from core.enumeration import ImageDirectories
+from core.enumeration import ImageDirectories, ServiceCreatedStatus
 from models.profile.salon import Salon, SalonLocation, SalonServicePrice
 from models.services.service import Services, SubServices
 from pydantic_schemas.services.service_details import ServiceDetailsResponse
+from service.booking.ratings import service_rating_summary, sub_service_rating_summary
 
 
 minor_image_url = f"{BASE_URL}/{ImageDirectories.SERVICE_DIR.value}minor/"
@@ -213,22 +214,34 @@ def _build_image_url(base_url: str, image_name: str | None) -> str | None:
     return f"{base_url.rstrip('/')}/{str(image_name).lstrip('/')}"
 
 
-def _serialize_major_service(major: Services) -> dict:
+def _rating_or_none(summary: dict) -> float | None:
+    return summary["average"] if summary["count"] > 0 else None
+
+
+def _serialize_major_service(
+    major: Services,
+    *,
+    rating: float | None = None,
+) -> dict:
     return {
         "id": str(major.id),
         "name": major.name,
         "image": _build_image_url(major_image_url, major.service_picture),
-        "rating": getattr(major, "rating", None),
+        "rating": rating,
     }
 
 
-def _serialize_minor_service(minor: SubServices) -> dict:
+def _serialize_minor_service(
+    minor: SubServices,
+    *,
+    rating: float | None = None,
+) -> dict:
     return {
         "id": str(minor.id),
         "service_id": str(minor.service_id),
         "name": minor.name,
         "image": _build_image_url(minor_image_url, minor.file_name),
-        "rating": getattr(minor, "rating", None),
+        "rating": rating,
         "is_event": getattr(minor, "is_event", False),
     }
 
@@ -280,23 +293,40 @@ async def _get_service_details(
             SalonServicePrice.currency,
         ]
 
-        if hasattr(Salon, "average_rating"):
-            query_columns.append(Salon.average_rating.label("rating"))
-            group_by_columns.append(Salon.average_rating)
-
         salon_rows = (
             db.query(*query_columns)
             .join(SalonServicePrice, Salon.id == SalonServicePrice.salon_id)
             .outerjoin(SalonLocation, SalonLocation.salon_id == Salon.id)
-            .filter(SalonServicePrice.sub_service_id.in_(minor_ids))
+            .filter(
+                SalonServicePrice.sub_service_id.in_(minor_ids),
+                SalonServicePrice.status == ServiceCreatedStatus.ACTIVE,
+                SalonServicePrice.price_min.isnot(None),
+                SalonServicePrice.price_min >= 0,
+                SalonServicePrice.duration_minutes.isnot(None),
+                SalonServicePrice.duration_minutes > 0,
+                SalonServicePrice.concurrent_capacity >= 1,
+            )
             .group_by(*group_by_columns)
             .all()
         )
 
         return ServiceDetailsResponse(
-            major_service=_serialize_major_service(major_service),
+            major_service=_serialize_major_service(
+                major_service,
+                rating=_rating_or_none(
+                    service_rating_summary(db, service_id=major_service.id)
+                ),
+            ),
             minor_service=None,
-            minor_services=[_serialize_minor_service(minor) for minor in minor_services],
+            minor_services=[
+                _serialize_minor_service(
+                    minor,
+                    rating=_rating_or_none(
+                        sub_service_rating_summary(db, sub_service_id=minor.id)
+                    ),
+                )
+                for minor in minor_services
+            ],
             salon_details=[
                 {
                     "salon_id": str(row.salon_id),
@@ -310,7 +340,13 @@ async def _get_service_details(
                     "price_max": row.price_max,
                     "currency": row.currency,
                     "duration_minutes": row.duration_minutes,
-                    "rating": getattr(row, "rating", None),
+                    "rating": _rating_or_none(
+                        service_rating_summary(
+                            db,
+                            service_id=major_service.id,
+                            salon_id=row.salon_id,
+                        )
+                    ),
                 }
                 for row in salon_rows
             ],
@@ -352,20 +388,35 @@ async def _get_service_details(
         SalonServicePrice.duration_minutes.label("duration_minutes"),
     ]
 
-    if hasattr(Salon, "average_rating"):
-        query_columns.append(Salon.average_rating.label("rating"))
-
     salon_rows = (
         db.query(*query_columns)
         .join(SalonServicePrice, Salon.id == SalonServicePrice.salon_id)
         .outerjoin(SalonLocation, SalonLocation.salon_id == Salon.id)
-        .filter(SalonServicePrice.sub_service_id == minor_service.id)
+        .filter(
+            SalonServicePrice.sub_service_id == minor_service.id,
+            SalonServicePrice.status == ServiceCreatedStatus.ACTIVE,
+            SalonServicePrice.price_min.isnot(None),
+            SalonServicePrice.price_min >= 0,
+            SalonServicePrice.duration_minutes.isnot(None),
+            SalonServicePrice.duration_minutes > 0,
+            SalonServicePrice.concurrent_capacity >= 1,
+        )
         .all()
     )
 
     return ServiceDetailsResponse(
-        major_service=_serialize_major_service(major_service),
-        minor_service=_serialize_minor_service(minor_service),
+        major_service=_serialize_major_service(
+            major_service,
+            rating=_rating_or_none(
+                service_rating_summary(db, service_id=major_service.id)
+            ),
+        ),
+        minor_service=_serialize_minor_service(
+            minor_service,
+            rating=_rating_or_none(
+                sub_service_rating_summary(db, sub_service_id=minor_service.id)
+            ),
+        ),
         minor_services=None,
         salon_details=[
             {
@@ -381,7 +432,13 @@ async def _get_service_details(
                 "price_max": row.price_max,
                 "currency": row.currency,
                 "duration_minutes": row.duration_minutes,
-                "rating": getattr(row, "rating", None),
+                "rating": _rating_or_none(
+                    sub_service_rating_summary(
+                        db,
+                        sub_service_id=minor_service.id,
+                        salon_id=row.salon_id,
+                    )
+                ),
             }
             for row in salon_rows
         ],

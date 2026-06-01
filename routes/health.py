@@ -3,11 +3,16 @@ from datetime import datetime, timezone
 from time import perf_counter
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
-from core.database import SessionLocal
+from core.database import SessionLocal, get_db
 from core.r2_config import BUCKET_NAME, R2_ENDPOINT, s3
+from service.booking.booking import (
+    expire_pending_bookings_for_scope,
+    mark_no_show_bookings_for_scope,
+)
 from service.notification.push import _credential_source, _firebase_app
 
 health = APIRouter(prefix="/health", tags=["Health"])
@@ -47,6 +52,36 @@ def readiness(response: Response) -> dict:
 @health.get("")
 def health_summary(response: Response) -> dict:
     return readiness(response)
+
+
+@health.post("/maintenance/booking-status")
+def run_booking_status_maintenance(
+    _: None = Depends(_require_maintenance_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    expired = expire_pending_bookings_for_scope(db)
+    no_show = mark_no_show_bookings_for_scope(db)
+    db.commit()
+    return {
+        "expired_bookings": expired,
+        "no_show_bookings": no_show,
+    }
+
+
+def _require_maintenance_token(
+    x_maintenance_token: str | None = Header(default=None),
+) -> None:
+    expected = os.getenv("MAINTENANCE_TOKEN")
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Maintenance token is not configured",
+        )
+    if x_maintenance_token != expected:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid maintenance token",
+        )
 
 
 def _check_database() -> dict:

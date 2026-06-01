@@ -4,16 +4,16 @@ from datetime import datetime, timezone, timedelta
 from math import asin, cos, radians, sin, sqrt
 from typing import List
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session, joinedload
 
-from core.enumeration import ImageDirectories
+from core.enumeration import BookingStatus, ImageDirectories, ServiceCreatedStatus
 from core.r2_config import BASE_URL
 from models.auth.profile_picture import ProfilePicture
 from models.auth.user import User
-from models.booking.booking import Booking
+from models.booking.booking import Booking, ServiceReview
 from models.posts.posts import Post
-from models.profile.salon import Salon, SalonLocation
+from models.profile.salon import Salon, SalonLocation, SalonServicePrice
 from models.services.service import SubServices
 from pydantic_schemas.pagination import pagination_meta
 from service.account.enforcement import customer_recommendation_controls, is_blocked_between
@@ -147,7 +147,7 @@ def get_nearby_salons(
     }
 
 
-# ── Top salons (by booking count) ─────────────────────────────────────────────
+# ── Top salons ───────────────────────────────────────────────────────────────
 
 def get_top_salons(
     db: Session,
@@ -155,7 +155,65 @@ def get_top_salons(
     limit: int = 10,
     offset: int = 0,
 ) -> dict:
-    # Use a flat column query — avoids joinedload conflict with group_by aggregates
+    recent_cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+
+    completed_bookings_sq = (
+        db.query(
+            Booking.salon_id.label("salon_id"),
+            func.count(Booking.id).label("completed_bookings"),
+            func.max(Booking.created_at).label("latest_completed_at"),
+        )
+        .filter(Booking.status == BookingStatus.COMPLETED)
+        .group_by(Booking.salon_id)
+        .subquery()
+    )
+
+    reviews_sq = (
+        db.query(
+            ServiceReview.salon_id.label("salon_id"),
+            func.avg(ServiceReview.rating).label("average_rating"),
+            func.count(ServiceReview.id).label("review_count"),
+        )
+        .group_by(ServiceReview.salon_id)
+        .subquery()
+    )
+
+    active_services_sq = (
+        db.query(
+            SalonServicePrice.salon_id.label("salon_id"),
+            func.count(SalonServicePrice.id).label("active_services"),
+        )
+        .filter(
+            SalonServicePrice.status == ServiceCreatedStatus.ACTIVE,
+            SalonServicePrice.price_min.isnot(None),
+            SalonServicePrice.price_min >= 0,
+            SalonServicePrice.duration_minutes.isnot(None),
+            SalonServicePrice.duration_minutes > 0,
+            SalonServicePrice.concurrent_capacity >= 1,
+        )
+        .group_by(SalonServicePrice.salon_id)
+        .subquery()
+    )
+
+    completed_bookings = func.coalesce(
+        completed_bookings_sq.c.completed_bookings,
+        0,
+    )
+    average_rating = func.coalesce(reviews_sq.c.average_rating, 0)
+    review_count = func.coalesce(reviews_sq.c.review_count, 0)
+    active_services = func.coalesce(active_services_sq.c.active_services, 0)
+    recent_activity = case(
+        (completed_bookings_sq.c.latest_completed_at >= recent_cutoff, 1),
+        else_=0,
+    )
+    score = (
+        completed_bookings * 2.0
+        + average_rating * 20.0
+        + review_count * 1.5
+        + active_services * 1.0
+        + recent_activity * 8.0
+    ).label("score")
+
     query = (
         db.query(
             Salon.id,
@@ -164,30 +222,30 @@ def get_top_salons(
             Salon.display_ads,
             SalonLocation.city,
             ProfilePicture.file_name.label("profile_file"),
-            func.count(Booking.id).label("booking_count"),
+            completed_bookings.label("booking_count"),
+            average_rating.label("average_rating"),
+            review_count.label("review_count"),
+            active_services.label("active_services"),
+            score,
         )
-        .outerjoin(Booking, Booking.salon_id == Salon.id)
         .join(User, User.id == Salon.user_id)
         .outerjoin(ProfilePicture, ProfilePicture.user_id == User.id)
         .outerjoin(SalonLocation, SalonLocation.salon_id == Salon.id)
-        .filter(Salon.user_id != current_user_id)
-        .group_by(
-            Salon.id,
-            Salon.user_id,
-            Salon.title,
-            Salon.display_ads,
-            SalonLocation.city,
-            ProfilePicture.file_name,
+        .outerjoin(
+            completed_bookings_sq,
+            completed_bookings_sq.c.salon_id == Salon.id,
         )
-        .order_by(func.count(Booking.id).desc())
+        .outerjoin(reviews_sq, reviews_sq.c.salon_id == Salon.id)
+        .outerjoin(active_services_sq, active_services_sq.c.salon_id == Salon.id)
+        .filter(Salon.user_id != current_user_id)
+        .order_by(
+            score.desc(),
+            completed_bookings.desc(),
+            Salon.created_at.desc(),
+        )
     )
     total = query.count()
-    rows = (
-        query
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
+    rows = query.offset(offset).limit(limit).all()
 
     items = [
         {
@@ -196,6 +254,9 @@ def get_top_salons(
             "cover_image": _cover_from_row(row.display_ads, row.profile_file),
             "city": row.city,
             "booking_count": row.booking_count,
+            "average_rating": round(float(row.average_rating or 0), 2),
+            "review_count": row.review_count,
+            "active_services": row.active_services,
         }
         for row in rows
         if not is_blocked_between(db, current_user_id, row.user_id)

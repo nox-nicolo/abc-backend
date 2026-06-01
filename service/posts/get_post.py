@@ -15,6 +15,9 @@ from core.enumeration import (
 )
 
 from models.booking.booking import Booking, ServiceReview
+from models.saved import SavedSalon, SavedService
+from models.search.search import SearchHistory
+from models.services.service import UserSelectServices
 from models.posts.posts import (
     Post,
     PostBoorkmark,
@@ -30,6 +33,7 @@ from models.profile.salon import SalonFollower, Salon, SalonLocation, SalonServi
 from pydantic_schemas.posts.single_post import BookingState, EngagementState, OtherPostsSection, PostPreview, PriceRange, ReviewSection, ServiceProduct, ServiceSection, SimilarSection, SinglePostResponse, SponsoredSalonSection, StylistSection
 from service.trending.logic import apply_trending_logic
 from service.posts.repost import can_share_post
+from service.account.enforcement import customer_recommendation_controls
 
 from core.r2_config import BASE_URL 
 from core.enumeration import (
@@ -49,6 +53,31 @@ from core.enumeration import (
 
 POST_IMAGE_BASE = f"{BASE_URL}/{ImageDirectories.POST_DIR.value}"
 PROFILE_IMAGE_BASE = f"{BASE_URL}/{ImageDirectories.PROFILE_DIR.value}"
+SALON_COVER_IMAGE_BASE = f"{BASE_URL}/{ImageDirectories.SALON_COVER_DIR.value}"
+
+
+# ------------------------------------------------------------------
+# Baby feed model
+# ------------------------------------------------------------------
+FEED_RANKING_MODEL_VERSION = "baby-linear-v1"
+FEED_RANKING_WEIGHTS = {
+    "followed_salon": 30.0,
+    "saved_salon": 22.0,
+    "saved_sub_service": 18.0,
+    "booked_salon": 18.0,
+    "booked_sub_service": 16.0,
+    "selected_service": 14.0,
+    "recent_search_match": 8.0,
+    "engagement": 20.0,
+    "has_media": 3.0,
+}
+
+
+def _baby_feed_score(features: Dict[str, float]) -> float:
+    return sum(
+        FEED_RANKING_WEIGHTS[name] * float(features.get(name, 0.0))
+        for name in FEED_RANKING_WEIGHTS
+    )
 
 
 # ------------------------------------------------------------------
@@ -79,6 +108,153 @@ def build_post_media_url(file_name: Optional[str]) -> Optional[str]:
         return None
     return f"{POST_IMAGE_BASE}{file_name}"
 
+
+def build_salon_cover_url(file_name: Optional[str]) -> Optional[str]:
+    if not file_name:
+        return None
+    return f"{SALON_COVER_IMAGE_BASE}{file_name}"
+
+
+def _rank_explore_posts(posts: List[Post], user_id: str, db: Session) -> List[Post]:
+    post_ids = [post.id for post in posts]
+    salon_ids = [post.user.salon.id for post in posts if post.user and post.user.salon]
+    sub_service_ids = [post.sub_service_id for post in posts if post.sub_service_id]
+
+    controls = customer_recommendation_controls(db, user_id)
+
+    followed_salon_ids = set()
+    if controls.use_following and salon_ids:
+        followed_salon_ids = {
+            row[0]
+            for row in db.query(SalonFollower.salon_id)
+            .filter(
+                SalonFollower.user_id == user_id,
+                SalonFollower.salon_id.in_(salon_ids),
+            )
+            .all()
+        }
+
+    saved_salon_ids = set()
+    saved_sub_service_ids = set()
+    if controls.use_saved:
+        if salon_ids:
+            saved_salon_ids = {
+                row[0]
+                for row in db.query(SavedSalon.salon_id)
+                .filter(
+                    SavedSalon.user_id == user_id,
+                    SavedSalon.salon_id.in_(salon_ids),
+                )
+                .all()
+            }
+        if sub_service_ids:
+            saved_sub_service_ids = {
+                row[0]
+                for row in db.query(SavedService.sub_service_id)
+                .filter(
+                    SavedService.user_id == user_id,
+                    SavedService.sub_service_id.in_(sub_service_ids),
+                )
+                .all()
+                if row[0]
+            }
+
+    booked_salon_ids = set()
+    booked_sub_service_ids = set()
+    if controls.use_bookings:
+        if salon_ids:
+            booked_salon_ids = {
+                row[0]
+                for row in db.query(Booking.salon_id)
+                .filter(
+                    Booking.customer_id == user_id,
+                    Booking.salon_id.in_(salon_ids),
+                    Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.COMPLETED]),
+                )
+                .all()
+            }
+        if sub_service_ids:
+            booked_sub_service_ids = {
+                row[0]
+                for row in db.query(SalonServicePrice.sub_service_id)
+                .join(Booking, Booking.salon_service_price_id == SalonServicePrice.id)
+                .filter(
+                    Booking.customer_id == user_id,
+                    Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.COMPLETED]),
+                    SalonServicePrice.sub_service_id.in_(sub_service_ids),
+                )
+                .all()
+                if row[0]
+            }
+
+    selected_service_ids: set[str] = set()
+    selected = (
+        db.query(UserSelectServices.services)
+        .filter(UserSelectServices.user_id == user_id)
+        .first()
+    )
+    if selected and selected[0]:
+        selected_service_ids = set(selected[0])
+
+    searched_entity_ids = {
+        row[0]
+        for row in db.query(SearchHistory.entity_id)
+        .filter(
+            SearchHistory.user_id == user_id,
+            SearchHistory.entity_id.isnot(None),
+            SearchHistory.entity.in_(["salon", "service"]),
+        )
+        .order_by(SearchHistory.created_at.desc())
+        .limit(50)
+        .all()
+        if row[0]
+    }
+
+    engagement_rows = (
+        db.query(
+            Post.id,
+            func.count(func.distinct(PostLike.id)).label("likes"),
+            func.count(func.distinct(PostComment.id)).label("comments"),
+            func.count(func.distinct(PostShare.id)).label("shares"),
+        )
+        .outerjoin(PostLike, and_(PostLike.post_id == Post.id, PostLike.liked.is_(True)))
+        .outerjoin(PostComment, PostComment.post_id == Post.id)
+        .outerjoin(PostShare, PostShare.post_id == Post.id)
+        .filter(Post.id.in_(post_ids))
+        .group_by(Post.id)
+        .all()
+    )
+    engagement = {
+        row.id: int(row.likes or 0) + int(row.comments or 0) * 2 + int(row.shares or 0) * 3
+        for row in engagement_rows
+    }
+
+    def features_for(post: Post) -> Dict[str, float]:
+        salon = post.user.salon if post.user else None
+        salon_id = salon.id if salon else None
+        sub_service_id = post.sub_service_id
+        engagement_score = min(float(engagement.get(post.id, 0)), 100.0) / 100.0
+
+        return {
+            "followed_salon": 1.0 if salon_id and salon_id in followed_salon_ids else 0.0,
+            "saved_salon": 1.0 if salon_id and salon_id in saved_salon_ids else 0.0,
+            "saved_sub_service": 1.0 if sub_service_id and sub_service_id in saved_sub_service_ids else 0.0,
+            "booked_salon": 1.0 if salon_id and salon_id in booked_salon_ids else 0.0,
+            "booked_sub_service": 1.0 if sub_service_id and sub_service_id in booked_sub_service_ids else 0.0,
+            "selected_service": 1.0 if sub_service_id and sub_service_id in selected_service_ids else 0.0,
+            "recent_search_match": 1.0
+            if (salon_id and salon_id in searched_entity_ids)
+            or (sub_service_id and sub_service_id in searched_entity_ids)
+            else 0.0,
+            "engagement": engagement_score,
+            "has_media": 1.0 if post.media_items else 0.0,
+        }
+
+    return sorted(
+        posts,
+        key=lambda post: (_baby_feed_score(features_for(post)), post.created_at),
+        reverse=True,
+    )
 
 
 # ==============================================================
@@ -170,11 +346,10 @@ async def get_posts_(
     if cursor_dt:
         query = query.filter(Post.created_at < cursor_dt)
 
-    posts = (
-        query.order_by(Post.created_at.desc())
-        .limit(limit)
-        .all()
-    )
+    posts = query.order_by(Post.created_at.desc()).limit(limit).all()
+
+    if option == PostCollectionType.explore and posts:
+        posts = _rank_explore_posts(posts, user_id, db)
 
     return _build_posts_response(posts, user_id, db)
 
@@ -538,6 +713,7 @@ def _map_post_to_post_response_schema(raw: Dict[str, Any]) -> Dict[str, Any]:
 
         "author": {
             "id": author["user_id"],
+            "salon_id": salon["id"] if salon else None,
             "salon_name": salon["title"] if salon else "",
             "username": author["username"],
             "display_picture": author.get("profile_picture"),
@@ -1076,6 +1252,7 @@ def _build_sponsored_salons_section(
             SponsoredSalonSection(
                 salon_id=salon.id,
                 name=salon.title,
+                image_url=build_salon_cover_url(salon.display_ads),
                 location=(
                     f"{location.city}, {location.country}"
                     if location

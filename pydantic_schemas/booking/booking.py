@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from pydantic import AliasChoices, BaseModel, Field, ConfigDict
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from core.enumeration import BookingStatus
 from pydantic_schemas.pagination import Page
 
@@ -12,6 +12,7 @@ from pydantic_schemas.pagination import Page
 class BookingCreate(BaseModel):
     # 🔑 CHANGED: concrete bookable offering
     salon_service_price_id: str
+    stylist_id: Optional[str] = None
 
     start_at: datetime = Field(..., description="Requested start time (UTC)")
     note: Optional[str] = Field(None, max_length=500)
@@ -29,6 +30,10 @@ class BookingResponse(BaseModel):
     customer_id: str
     customer_name: Optional[str] = None
     salon_id: str
+    salon_service_price_id: str
+    stylist_id: Optional[str] = None
+    stylist_name: Optional[str] = None
+    stylist_avatar: Optional[str] = None
 
     # ❌ REMOVED: sub_service_id
     # sub_service_id: Optional[str]
@@ -85,6 +90,10 @@ class BookingReschedule(BaseModel):
     start_at: datetime = Field(..., description="New requested start time (UTC)")
 
 
+class BookingAssignStylist(BaseModel):
+    stylist_id: Optional[str] = None
+
+
 # -------------------------------------------------
 # Review booking
 # -------------------------------------------------
@@ -112,12 +121,22 @@ class BookingListItem(BaseModel):
     id: str
     status: BookingStatus
 
+    customer_id: str
+    customer_name: Optional[str] = None
+    salon_service_price_id: str
+    stylist_id: Optional[str] = None
+    stylist_name: Optional[str] = None
+    stylist_avatar: Optional[str] = None
+
     start_at: datetime
     end_at: datetime
 
     service_name_snapshot: Optional[str]
+    duration_minutes_snapshot: int
     price_snapshot: float
     currency_snapshot: str
+
+    note: Optional[str] = None
     
     cancel_reason: Optional[str] = None
 
@@ -152,3 +171,16 @@ class AvailabilityDay(BaseModel):
 
 class AvailabilityResponse(BaseModel):
     items: List[AvailabilityDay]
+
+
+class BookingEventResponse(BaseModel):
+    id: str
+    booking_id: str
+    actor_id: Optional[str] = None
+    event_type: str
+    from_status: Optional[str] = None
+    to_status: Optional[str] = None
+    event_metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

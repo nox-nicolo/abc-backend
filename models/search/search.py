@@ -1,4 +1,6 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Index
+import uuid
+
+from sqlalchemy import Column, String, ForeignKey, DateTime, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
@@ -8,7 +10,7 @@ from models.base import Base
 class SearchHistory(Base):
     __tablename__ = "search_histories"
 
-    id = Column(String(36), primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
 
     user_id = Column(
         String(36),
@@ -25,7 +27,7 @@ class SearchHistory(Base):
         # user | salon | service | hashtag | post | query
     )
 
-    entity_id = Column(Integer, nullable=True)
+    entity_id = Column(String(64), nullable=True)
 
     created_at = Column(
         DateTime(timezone=True),

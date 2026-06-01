@@ -3,11 +3,11 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     INTEGER, Column, DateTime, Index, String, ForeignKey, Enum, TIMESTAMP,
-    Integer, Numeric, Text
+    Integer, JSON, Numeric, Text
 )
 from sqlalchemy.orm import relationship
 
-from core.enumeration import BookingStatus
+from core.enumeration import BookingStatus, ImageURL
 from models.base import Base
 
 
@@ -21,6 +21,8 @@ class Booking(Base):
     salon_id = Column(String(36), ForeignKey("salons.id", ondelete="CASCADE"), nullable=False, index=True)
 
     salon_service_price_id = Column(String(36), ForeignKey("salon_service_prices.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    stylist_id = Column(String(36), ForeignKey("salon_stylists.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # schedule
     start_at = Column(TIMESTAMP(timezone=True), nullable=False, index=True)
@@ -51,16 +53,40 @@ class Booking(Base):
     customer = relationship("User", back_populates="bookings")
     salon = relationship("Salon", back_populates="bookings")
     salon_service_price = relationship("SalonServicePrice", back_populates="bookings")
+    stylist = relationship("SalonStylist")
     review = relationship(
         "ServiceReview",
         back_populates="booking",
         uselist=False,
         cascade="all, delete-orphan",
     )
+    events = relationship(
+        "BookingEvent",
+        back_populates="booking",
+        cascade="all, delete-orphan",
+        order_by="BookingEvent.created_at",
+    )
 
     @property
     def customer_name(self):
         return self.customer.name if self.customer else None
+
+    @property
+    def stylist_name(self):
+        if not self.stylist:
+            return None
+        if self.stylist.user:
+            return self.stylist.user.name
+        return self.stylist.title
+
+    @property
+    def stylist_avatar(self):
+        if not self.stylist or not self.stylist.user:
+            return None
+        profile_picture = self.stylist.user.profile_picture
+        if not profile_picture or not profile_picture.file_name:
+            return None
+        return f"{ImageURL.PROFILE_URL.value}/{profile_picture.file_name}"
 
     @property
     def has_review(self):
@@ -86,10 +112,45 @@ class Booking(Base):
         Index("ix_bookings_salon_start", "salon_id", "start_at"),
         Index("ix_bookings_created", "created_at"),
     )
-    
-    
-    
-    
+
+# -------------------------------------------------------------------
+# Booking lifecycle audit events
+# -------------------------------------------------------------------
+class BookingEvent(Base):
+    __tablename__ = "booking_events"
+
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    booking_id = Column(
+        String(36),
+        ForeignKey("bookings.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    actor_id = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    event_type = Column(String(80), nullable=False, index=True)
+    from_status = Column(String(30), nullable=True)
+    to_status = Column(String(30), nullable=True)
+    event_metadata = Column(JSON, nullable=False, default=dict)
+    created_at = Column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        index=True,
+    )
+
+    booking = relationship("Booking", back_populates="events")
+    actor = relationship("User")
+
+    __table_args__ = (
+        Index("ix_booking_events_booking_created", "booking_id", "created_at"),
+        Index("ix_booking_events_booking_type", "booking_id", "event_type"),
+    )
+
 # -------------------------------------------------------------------
 # Service Reviews
 # -------------------------------------------------------------------
@@ -132,6 +193,20 @@ class ServiceReview(Base):
         index=True,
     )
 
+    service_id = Column(
+        String(36),
+        ForeignKey("services.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    sub_service_id = Column(
+        String(36),
+        ForeignKey("sub_services.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     stylist_id = Column(
         String(36),
         ForeignKey("salon_stylists.id", ondelete="SET NULL"),
@@ -169,6 +244,8 @@ class ServiceReview(Base):
         "SalonServicePrice",
         back_populates="reviews",
     )
+    service = relationship("Services")
+    sub_service = relationship("SubServices")
     
     Index("ix_review_service", "salon_service_price_id")
     Index("ix_review_salon", "salon_id")

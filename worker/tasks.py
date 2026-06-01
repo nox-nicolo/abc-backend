@@ -31,7 +31,10 @@ from service.notification.notification import (
     create_notification,
     log_notification_send,
 )
-from service.booking.booking import expire_pending_bookings_for_scope
+from service.booking.booking import (
+    expire_pending_bookings_for_scope,
+    mark_no_show_bookings_for_scope,
+)
 from service.profile.top_salon import get_top_salons
 from worker.celery_app import celery_app
 
@@ -112,6 +115,22 @@ def expire_pending_bookings() -> dict:
     except Exception:
         db.rollback()
         logger.exception("expire_pending_bookings failed")
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="worker.tasks.mark_no_show_bookings")
+def mark_no_show_bookings() -> dict:
+    db = SessionLocal()
+    try:
+        marked = mark_no_show_bookings_for_scope(db)
+        db.commit()
+        logger.info("marked no-show bookings=%s", marked)
+        return {"no_show_bookings": marked}
+    except Exception:
+        db.rollback()
+        logger.exception("mark_no_show_bookings failed")
         raise
     finally:
         db.close()
