@@ -54,20 +54,6 @@ def health_summary(response: Response) -> dict:
     return readiness(response)
 
 
-@health.post("/maintenance/booking-status")
-def run_booking_status_maintenance(
-    _: None = Depends(_require_maintenance_token),
-    db: Session = Depends(get_db),
-) -> dict:
-    expired = expire_pending_bookings_for_scope(db)
-    no_show = mark_no_show_bookings_for_scope(db)
-    db.commit()
-    return {
-        "expired_bookings": expired,
-        "no_show_bookings": no_show,
-    }
-
-
 def _require_maintenance_token(
     x_maintenance_token: str | None = Header(default=None),
 ) -> None:
@@ -82,6 +68,20 @@ def _require_maintenance_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid maintenance token",
         )
+
+
+@health.post("/maintenance/booking-status")
+def run_booking_status_maintenance(
+    _: None = Depends(_require_maintenance_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    expired = expire_pending_bookings_for_scope(db)
+    no_show = mark_no_show_bookings_for_scope(db)
+    db.commit()
+    return {
+        "expired_bookings": expired,
+        "no_show_bookings": no_show,
+    }
 
 
 def _check_database() -> dict:
