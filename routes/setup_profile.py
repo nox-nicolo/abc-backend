@@ -1,3 +1,5 @@
+"""Provides the Setup Profile API route module for the backend application."""
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session

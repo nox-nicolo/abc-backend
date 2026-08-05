@@ -1,3 +1,5 @@
+"""Provides the Availability business logic module for booking workflows."""
+
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional
 

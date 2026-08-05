@@ -1,3 +1,5 @@
+"""Provides the Conftest test module for the backend application."""
+
 import os
 import uuid
 from collections.abc import Iterable

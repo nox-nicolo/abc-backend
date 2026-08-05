@@ -1,3 +1,5 @@
+"""Provides the Notifications API route module for the backend application."""
+
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -16,6 +18,7 @@ from pydantic_schemas.notifications.notification import (
 from service.auth.JWT.oauth2 import get_current_user
 from service.auth.permissions import SalonPrincipal, require_salon_owner
 from service.notification.notification import (
+    clear_notifications,
     create_salon_event_campaign,
     create_salon_promotion_campaign,
     get_unread_count,
@@ -91,6 +94,14 @@ def read_all(
     db: Session = Depends(get_db),
 ):
     return mark_all_read(db=db, user_id=current_user.user_id)
+
+
+@notifications.delete("", status_code=200)
+def clear_all_notifications(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return clear_notifications(db=db, user_id=current_user.user_id)
 
 
 @notifications.post("/{notification_id}/read", status_code=200)

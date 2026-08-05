@@ -1,3 +1,5 @@
+"""Provides the Profile Completion business logic module for account workflows."""
+
 from __future__ import annotations
 
 from sqlalchemy.orm import Session

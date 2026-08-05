@@ -1,3 +1,5 @@
+"""Provides the Rate Limit shared infrastructure module for the backend application."""
+
 import time
 from collections import deque
 from threading import Lock

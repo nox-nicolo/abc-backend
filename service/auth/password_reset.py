@@ -1,3 +1,5 @@
+"""Provides the Password Reset business logic module for auth workflows."""
+
 from datetime import datetime, timedelta
 import os
 import secrets

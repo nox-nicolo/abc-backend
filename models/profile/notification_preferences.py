@@ -1,3 +1,5 @@
+"""Provides the Notification Preferences database model module for profile workflows."""
+
 import uuid
 from datetime import datetime, timezone
 

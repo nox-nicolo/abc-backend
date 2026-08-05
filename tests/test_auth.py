@@ -1,3 +1,5 @@
+"""Provides the Test Auth test module for the backend application."""
+
 from types import SimpleNamespace
 
 import pytest

@@ -1,3 +1,5 @@
+"""Provides the Settings request and response schema module for profile workflows."""
+
 from datetime import date, time
 from pydantic import BaseModel, ConfigDict, EmailStr, HttpUrl, model_validator
 from typing import List, Optional

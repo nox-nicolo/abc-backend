@@ -1,3 +1,4 @@
+"""Provides the Search API route module for the backend application."""
 
 from typing import Optional
 from fastapi import APIRouter, Depends, Query

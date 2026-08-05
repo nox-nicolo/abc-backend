@@ -1,3 +1,5 @@
+"""Provides the Database shared infrastructure module for the backend application."""
+
 # from sqlalchemy import create_engine
 # from sqlalchemy.orm import sessionmaker
 

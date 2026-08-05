@@ -1,3 +1,5 @@
+"""Provides the Top Salon business logic module for profile workflows."""
+
 # from sqlalchemy.orm import Session, joinedload
 # from sqlalchemy import func, and_
 

@@ -1,3 +1,5 @@
+"""Provides the Settings database model module for account workflows."""
+
 import uuid
 from datetime import datetime, timezone
 

@@ -1,3 +1,5 @@
+"""Provides the Ratings business logic module for booking workflows."""
+
 from typing import Optional
 
 from sqlalchemy import func

@@ -1,3 +1,5 @@
+"""Provides the Verification database model module for auth workflows."""
+
 from datetime import datetime
 import uuid
 from sqlalchemy import TEXT, Column, Integer, ForeignKey, String, DateTime, Boolean, Enum

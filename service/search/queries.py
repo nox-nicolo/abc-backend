@@ -1,3 +1,5 @@
+"""Provides the Queries business logic module for search workflows."""
+
 # # service/search/queries.py
 
 # from __future__ import annotations

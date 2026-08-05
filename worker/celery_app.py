@@ -1,3 +1,5 @@
+"""Provides the Celery App background worker module for the backend application."""
+
 import os
 
 from celery import Celery

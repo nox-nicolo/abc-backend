@@ -1,3 +1,5 @@
+"""Provides the Salon Profile business logic module for the backend application."""
+
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 

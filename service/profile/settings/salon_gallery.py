@@ -1,3 +1,5 @@
+"""Provides the Salon Gallery business logic module for profile workflows."""
+
 # # import os
 # # import shutil
 # # from uuid import uuid4

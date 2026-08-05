@@ -1,3 +1,5 @@
+"""Provides the Delete Post business logic module for posts workflows."""
+
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 

@@ -1,3 +1,5 @@
+"""Provides the Service Details business logic module for the backend application."""
+
 # from fastapi import HTTPException, status
 # from sqlalchemy import func
 # from sqlalchemy.orm import Session

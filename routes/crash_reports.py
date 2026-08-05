@@ -1,3 +1,5 @@
+"""Provides the Crash Reports API route module for the backend application."""
+
 import logging
 from typing import Optional
 

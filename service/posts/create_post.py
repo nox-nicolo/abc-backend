@@ -1,3 +1,5 @@
+"""Provides the Create Post business logic module for posts workflows."""
+
 import json
 from typing import List, Optional, Union
 import uuid

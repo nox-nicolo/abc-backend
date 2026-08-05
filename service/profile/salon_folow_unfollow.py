@@ -1,3 +1,5 @@
+"""Provides the Salon Folow Unfollow business logic module for profile workflows."""
+
 import uuid
 from fastapi import HTTPException, status
 from models.profile.salon import Salon, SalonFollower

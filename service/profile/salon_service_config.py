@@ -1,3 +1,4 @@
+"""Provides the Salon Service Config business logic module for profile workflows."""
 
 # from typing import Dict, List, Optional, Tuple
 # from fastapi import HTTPException, status

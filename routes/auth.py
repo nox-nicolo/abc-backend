@@ -1,3 +1,4 @@
+"""Provides the Auth API route module for the backend application."""
 
 from fastapi import Depends, HTTPException, APIRouter, Request, status
 from fastapi.responses import JSONResponse

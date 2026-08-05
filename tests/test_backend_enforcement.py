@@ -1,3 +1,5 @@
+"""Provides the Test Backend Enforcement test module for the backend application."""
+
 from datetime import datetime, timezone
 
 import pytest

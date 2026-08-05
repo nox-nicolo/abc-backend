@@ -1,3 +1,5 @@
+"""Provides the Verify User business logic module for auth workflows."""
+
 from datetime import datetime, timedelta
 import uuid
 import secrets

@@ -1,3 +1,5 @@
+"""Provides the Salon Stylists request and response schema module for profile workflows."""
+
 # app/schemas/salon_stylist.py
 
 from __future__ import annotations

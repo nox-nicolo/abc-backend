@@ -1,3 +1,5 @@
+"""Provides the Booking request and response schema module for the backend application."""
+
 from datetime import date, datetime
 from pydantic import AliasChoices, BaseModel, Field, ConfigDict
 from typing import Any, Dict, List, Optional

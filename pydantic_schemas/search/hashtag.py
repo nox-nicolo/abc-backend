@@ -1,3 +1,5 @@
+"""Provides the Hashtag request and response schema module for search workflows."""
+
 # hashtag results
 from typing import List, Optional
 from pydantic import BaseModel

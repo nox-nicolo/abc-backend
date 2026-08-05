@@ -1,3 +1,5 @@
+"""Provides the Availability request and response schema module for the backend application."""
+
 from datetime import date, datetime, time
 from typing import List, Optional
 

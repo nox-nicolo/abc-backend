@@ -1,3 +1,5 @@
+"""Provides the Top Salon request and response schema module for profile workflows."""
+
 from pydantic import BaseModel
 from typing import Optional, List
 from pydantic_schemas.pagination import PaginationMeta

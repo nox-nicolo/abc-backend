@@ -1,3 +1,5 @@
+"""Provides the Notification Preferences business logic module for users workflows."""
+
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 

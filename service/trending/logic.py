@@ -1,3 +1,5 @@
+"""Provides the Logic business logic module for trending workflows."""
+
 # service/trending/logic.py
 
 from datetime import datetime, timedelta

@@ -1,3 +1,5 @@
+"""Provides the Booking Ai business logic module for notification workflows."""
+
 import os
 from dataclasses import dataclass
 from datetime import datetime

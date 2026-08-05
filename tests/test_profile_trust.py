@@ -1,3 +1,5 @@
+"""Provides the Test Profile Trust test module for the backend application."""
+
 from datetime import datetime, timezone
 from types import SimpleNamespace
 

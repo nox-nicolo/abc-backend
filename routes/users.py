@@ -1,3 +1,5 @@
+"""Provides the Users API route module for the backend application."""
+
 import time
 from collections import deque
 from threading import Lock

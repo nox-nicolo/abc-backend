@@ -1,3 +1,5 @@
+"""Provides the Refresh Token database model module for auth workflows."""
+
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey

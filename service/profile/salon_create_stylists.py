@@ -1,3 +1,5 @@
+"""Provides the Salon Create Stylists business logic module for profile workflows."""
+
 # app/services/salon_stylist_service.py
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+"""Provides the Profile Settings business logic module for account workflows."""
+
 from __future__ import annotations
 
 import uuid

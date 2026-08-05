@@ -1,3 +1,5 @@
+"""Provides the Me request and response schema module for auth workflows."""
+
 from pydantic import BaseModel
 from typing import Optional
 

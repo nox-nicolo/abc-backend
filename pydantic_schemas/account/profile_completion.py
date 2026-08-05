@@ -1,3 +1,5 @@
+"""Provides the Profile Completion request and response schema module for account workflows."""
+
 from pydantic import BaseModel
 
 

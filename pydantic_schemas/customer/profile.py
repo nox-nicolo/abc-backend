@@ -1,3 +1,5 @@
+"""Provides the Profile request and response schema module for customer workflows."""
+
 from pydantic import BaseModel
 from typing import Optional, List
 

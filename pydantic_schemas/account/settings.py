@@ -1,3 +1,5 @@
+"""Provides the Settings request and response schema module for account workflows."""
+
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field

@@ -1,3 +1,5 @@
+"""Provides the Trust request and response schema module for profile workflows."""
+
 from pydantic import BaseModel
 
 

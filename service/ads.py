@@ -1,3 +1,5 @@
+"""Provides the Ads business logic module for the backend application."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

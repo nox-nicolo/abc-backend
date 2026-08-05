@@ -1,3 +1,5 @@
+"""Provides the Chat API route module for the backend application."""
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 

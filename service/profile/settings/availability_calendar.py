@@ -1,3 +1,5 @@
+"""Provides the Availability Calendar business logic module for profile workflows."""
+
 from datetime import date
 
 from fastapi import HTTPException, status

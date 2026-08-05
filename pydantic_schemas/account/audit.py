@@ -1,3 +1,5 @@
+"""Provides the Audit request and response schema module for account workflows."""
+
 from datetime import datetime
 from typing import Any
 

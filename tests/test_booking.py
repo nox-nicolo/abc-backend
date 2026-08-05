@@ -1,3 +1,5 @@
+"""Provides the Test Booking test module for the backend application."""
+
 import asyncio
 from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal

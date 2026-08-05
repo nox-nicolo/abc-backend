@@ -1,3 +1,5 @@
+"""Provides the Trust business logic module for profile workflows."""
+
 from __future__ import annotations
 
 import os

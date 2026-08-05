@@ -1,3 +1,5 @@
+"""Provides the Ads database model module for the backend application."""
+
 from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text

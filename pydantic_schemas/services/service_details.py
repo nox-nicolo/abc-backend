@@ -1,3 +1,5 @@
+"""Provides the Service Details request and response schema module for the backend application."""
+
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
 

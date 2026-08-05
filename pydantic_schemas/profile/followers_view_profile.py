@@ -1,3 +1,5 @@
+"""Provides the Followers View Profile request and response schema module for the backend application."""
+
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional

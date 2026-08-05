@@ -1,3 +1,5 @@
+"""Provides the Search business logic module for the backend application."""
+
 # service/search/search.py
 
 from __future__ import annotations

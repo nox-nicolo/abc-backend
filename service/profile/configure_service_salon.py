@@ -1,3 +1,5 @@
+"""Provides the Configure Service Salon business logic module for profile workflows."""
+
 # # from fastapi import HTTPException
 # # from sqlalchemy.orm import Session
 # # from typing import List, Dict, Tuple

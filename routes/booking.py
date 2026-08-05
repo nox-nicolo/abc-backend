@@ -1,3 +1,5 @@
+"""Provides the Booking API route module for the backend application."""
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session

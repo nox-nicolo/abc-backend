@@ -1,3 +1,5 @@
+"""Provides the Salon database model module for profile workflows."""
+
 from datetime import datetime, timezone
 import uuid
 from sqlalchemy import BOOLEAN, DATE, FLOAT, TIME, Column, Enum, ForeignKey, Index, String, DateTime, INTEGER, UniqueConstraint, CheckConstraint

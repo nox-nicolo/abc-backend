@@ -1,3 +1,5 @@
+"""Provides the Chat request and response schema module for the backend application."""
+
 from datetime import datetime
 from typing import List, Optional
 

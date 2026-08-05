@@ -1,3 +1,5 @@
+"""Provides the Chat database model module for the backend application."""
+
 import uuid
 from datetime import datetime, timezone
 

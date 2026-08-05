@@ -1,3 +1,5 @@
+"""Provides the User Create request and response schema module for auth workflows."""
+
 from typing import Optional
 
 from pydantic import BaseModel, EmailStr, field_validator

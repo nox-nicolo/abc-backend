@@ -1,3 +1,5 @@
+"""Provides the Notification business logic module for the backend application."""
+
 from datetime import datetime, time, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -508,6 +510,16 @@ def mark_all_read(*, db: Session, user_id: str) -> dict:
     )
     db.commit()
     return {"updated": updated}
+
+
+def clear_notifications(*, db: Session, user_id: str) -> dict:
+    deleted = (
+        db.query(Notification)
+        .filter(Notification.recipient_id == user_id)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return {"deleted": deleted}
 
 
 def mark_read(*, db: Session, user_id: str, notification_id: str) -> dict:

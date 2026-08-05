@@ -1,3 +1,5 @@
+"""Provides the Test Jwt test module for the backend application."""
+
 from datetime import timedelta
 
 import pytest

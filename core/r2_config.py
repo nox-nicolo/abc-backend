@@ -1,3 +1,5 @@
+"""Provides the R2 Config shared infrastructure module for the backend application."""
+
 import os
 import logging
 from dotenv import load_dotenv

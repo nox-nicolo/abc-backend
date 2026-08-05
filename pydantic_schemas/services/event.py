@@ -1,3 +1,5 @@
+"""Provides the Event request and response schema module for the backend application."""
+
 from pydantic import BaseModel
 from typing import Optional
 from pydantic_schemas.pagination import Page

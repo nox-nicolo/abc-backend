@@ -1,3 +1,5 @@
+"""Provides the Me business logic module for auth workflows."""
+
 # from fastapi import Depends, HTTPException, status
 # from sqlalchemy.orm import Session
 

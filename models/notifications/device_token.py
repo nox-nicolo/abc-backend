@@ -1,3 +1,5 @@
+"""Provides the Device Token database model module for notifications workflows."""
+
 import uuid
 from datetime import datetime, timezone
 

@@ -1,3 +1,5 @@
+"""Provides the User database model module for auth workflows."""
+
 from datetime import datetime, timezone
 from sqlalchemy import Column, Enum, ForeignKey, LargeBinary, String, Boolean, DateTime, Index
 from sqlalchemy.orm import relationship

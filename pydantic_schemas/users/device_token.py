@@ -1,3 +1,5 @@
+"""Provides the Device Token request and response schema module for users workflows."""
+
 from datetime import datetime
 from typing import Literal, Optional
 

@@ -1,3 +1,5 @@
+"""Provides the Settings business logic module for account workflows."""
+
 from sqlalchemy.orm import Session
 
 from models.account.settings import UserAccountSettings

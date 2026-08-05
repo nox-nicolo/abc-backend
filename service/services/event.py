@@ -1,3 +1,5 @@
+"""Provides the Event business logic module for the backend application."""
+
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import outerjoin
 from models.services.service import SubServices

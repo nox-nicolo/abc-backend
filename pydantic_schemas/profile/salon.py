@@ -1,3 +1,5 @@
+"""Provides the Salon request and response schema module for profile workflows."""
+
 import datetime
 from typing import Optional
 from pydantic import BaseModel

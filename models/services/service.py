@@ -1,3 +1,5 @@
+"""Provides the Service database model module for the backend application."""
+
 from sqlalchemy import ARRAY, FLOAT, TEXT, Column, ForeignKey, String, BOOLEAN, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.mutable import MutableList

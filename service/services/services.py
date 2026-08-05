@@ -1,3 +1,5 @@
+"""Provides the Services business logic module for the backend application."""
+
 # import os
 # import shutil
 # import uuid

@@ -1,3 +1,5 @@
+"""Provides the Observability shared infrastructure module for the backend application."""
+
 import json
 import logging
 import os

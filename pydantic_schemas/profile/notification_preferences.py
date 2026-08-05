@@ -1,3 +1,5 @@
+"""Provides the Notification Preferences request and response schema module for profile workflows."""
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional
 

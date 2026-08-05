@@ -1,3 +1,5 @@
+"""Provides the Posts API route module for the backend application."""
+
 from datetime import datetime
 import json
 from typing import Optional, List

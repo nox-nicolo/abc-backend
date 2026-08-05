@@ -1,3 +1,4 @@
+"""Provides the Service API route module for the backend application."""
 
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session

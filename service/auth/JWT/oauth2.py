@@ -1,3 +1,5 @@
+"""Provides the Oauth2 business logic module for auth workflows."""
+
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session

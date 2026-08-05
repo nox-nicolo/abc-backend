@@ -1,3 +1,5 @@
+"""Provides the Permissions business logic module for auth workflows."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

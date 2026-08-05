@@ -1,3 +1,5 @@
+"""Provides the Test Notifications test module for the backend application."""
+
 import pytest
 from datetime import datetime, timedelta, timezone
 

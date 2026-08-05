@@ -1,3 +1,5 @@
+"""Provides the Search database model module for the backend application."""
+
 import uuid
 
 from sqlalchemy import Column, String, ForeignKey, DateTime, Index

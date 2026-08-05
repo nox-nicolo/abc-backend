@@ -1,3 +1,5 @@
+"""Provides the Get Post request and response schema module for posts workflows."""
+
 from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Optional, Literal, List, Dict

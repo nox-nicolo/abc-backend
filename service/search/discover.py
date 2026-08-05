@@ -1,3 +1,5 @@
+"""Provides the Discover business logic module for search workflows."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta

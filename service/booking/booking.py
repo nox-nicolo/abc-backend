@@ -1,3 +1,5 @@
+"""Provides the Booking business logic module for the backend application."""
+
 from datetime import date as DateType, datetime, time, timezone, timedelta
 from typing import List, Optional
 from zoneinfo import ZoneInfo

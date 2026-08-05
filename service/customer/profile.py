@@ -1,3 +1,5 @@
+"""Provides the Profile business logic module for customer workflows."""
+
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session, joinedload
 from fastapi import HTTPException, status

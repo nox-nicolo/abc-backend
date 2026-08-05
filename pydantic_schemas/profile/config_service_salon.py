@@ -1,3 +1,5 @@
+"""Provides the Config Service Salon request and response schema module for profile workflows."""
+
 from typing import Optional, List
 from pydantic import BaseModel
 

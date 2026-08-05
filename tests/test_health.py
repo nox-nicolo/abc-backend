@@ -1,3 +1,5 @@
+"""Provides the Test Health test module for the backend application."""
+
 from fastapi import Response, status
 
 import routes.health as health_routes

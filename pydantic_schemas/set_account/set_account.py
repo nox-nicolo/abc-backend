@@ -1,3 +1,5 @@
+"""Provides the Set Account request and response schema module for the backend application."""
+
 from typing import Optional
 from fastapi import File, UploadFile
 from pydantic import BaseModel, HttpUrl, Field

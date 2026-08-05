@@ -1,3 +1,5 @@
+"""Provides the Salon View business logic module for profile workflows."""
+
 # from datetime import datetime, timezone
 # from fastapi import HTTPException
 # from sqlalchemy.orm import Session, joinedload

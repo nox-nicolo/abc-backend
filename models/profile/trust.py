@@ -1,3 +1,5 @@
+"""Provides the Trust database model module for profile workflows."""
+
 import uuid
 from datetime import datetime, timezone
 

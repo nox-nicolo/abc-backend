@@ -1,3 +1,5 @@
+"""Provides the Notification database model module for notifications workflows."""
+
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import Column, String, Boolean, TIMESTAMP, ForeignKey, Index, Text, Integer

@@ -1,3 +1,5 @@
+"""Provides the Posts database model module for the backend application."""
+
 from datetime import datetime, timezone
 from sqlalchemy import Column, ForeignKey, Integer, String, Text, Boolean, Enum, TIMESTAMP, VARCHAR, Float, Index
 from sqlalchemy.orm import relationship

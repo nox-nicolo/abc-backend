@@ -1,3 +1,5 @@
+"""Provides the Saved database model module for the backend application."""
+
 from datetime import datetime, timezone
 import uuid
 

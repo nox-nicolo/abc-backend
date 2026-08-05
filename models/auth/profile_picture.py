@@ -1,3 +1,5 @@
+"""Provides the Profile Picture database model module for auth workflows."""
+
 from sqlalchemy import TEXT, Column, Boolean, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 

@@ -1,3 +1,5 @@
+"""Provides the Scoring business logic module for search workflows."""
+
 # service/search/scoring.py
 
 from __future__ import annotations

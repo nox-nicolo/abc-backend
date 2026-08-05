@@ -1,3 +1,5 @@
+"""Provides the Helper business logic module for booking workflows."""
+
 # ---------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------

@@ -1,3 +1,5 @@
+"""Provides the Customer Profile database model module for auth workflows."""
+
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import Column, String, Text, DateTime, ForeignKey

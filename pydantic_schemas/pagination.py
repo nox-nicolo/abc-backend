@@ -1,3 +1,5 @@
+"""Provides the Pagination request and response schema module for the backend application."""
+
 from typing import Generic, List, Optional, TypeVar
 
 from pydantic import BaseModel, Field

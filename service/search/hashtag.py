@@ -1,3 +1,5 @@
+"""Provides the Hashtag business logic module for search workflows."""
+
 # from datetime import datetime
 # from typing import Optional, Dict, Any, List
 

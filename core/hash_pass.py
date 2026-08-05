@@ -1,3 +1,4 @@
+"""Provides the Hash Pass shared infrastructure module for the backend application."""
 
 import bcrypt
 

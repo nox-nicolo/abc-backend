@@ -1,3 +1,5 @@
+"""Provides the Password Reset request and response schema module for auth workflows."""
+
 from pydantic import BaseModel, EmailStr, Field
 
 

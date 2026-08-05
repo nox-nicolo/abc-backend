@@ -1,3 +1,5 @@
+"""Provides the Create Post request and response schema module for posts workflows."""
+
 # ----------------------------------------------------------------------------------
 # Create Post (FINAL CLEAN VERSION)
 # ----------------------------------------------------------------------------------

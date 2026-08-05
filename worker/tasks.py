@@ -1,3 +1,5 @@
+"""Provides the Tasks background worker module for the backend application."""
+
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone

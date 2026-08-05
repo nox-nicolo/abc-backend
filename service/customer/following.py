@@ -1,3 +1,5 @@
+"""Provides the Following business logic module for customer workflows."""
+
 from sqlalchemy.orm import Session, joinedload
 
 from core.enumeration import ImageDirectories

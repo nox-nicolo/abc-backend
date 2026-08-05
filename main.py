@@ -1,3 +1,5 @@
+"""Provides the Main application module for the backend application."""
+
 from fastapi import FastAPI
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles

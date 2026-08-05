@@ -1,3 +1,5 @@
+"""Provides the Test Mutes test module for the backend application."""
+
 from datetime import datetime, timedelta, timezone
 
 import pytest

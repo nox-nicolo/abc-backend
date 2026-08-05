@@ -1,3 +1,5 @@
+"""Provides the Salon business logic module for profile workflows."""
+
 # from fastapi import HTTPException
 # from sqlalchemy.orm import joinedload, Session
 # from sqlalchemy import func

@@ -1,3 +1,5 @@
+"""Provides the Salon Working Hours business logic module for profile workflows."""
+
 import uuid
 from sqlalchemy.orm import Session
 from fastapi import HTTPException

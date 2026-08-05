@@ -1,3 +1,5 @@
+"""Provides the Chat business logic module for the backend application."""
+
 from datetime import datetime, timezone
 from typing import Optional
 

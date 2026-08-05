@@ -1,3 +1,5 @@
+"""Provides the Search request and response schema module for the backend application."""
+
 from datetime import datetime
 from typing import List, Literal, Union
 from pydantic import BaseModel

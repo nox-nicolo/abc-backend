@@ -1,3 +1,4 @@
+"""Provides the Top Salon Ranking business logic module for profile workflows."""
 
 
 def calculate_salon_score(

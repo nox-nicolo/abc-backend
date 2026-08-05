@@ -1,3 +1,5 @@
+"""Provides the User Select Service request and response schema module for users workflows."""
+
 from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 

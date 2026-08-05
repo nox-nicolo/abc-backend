@@ -1,3 +1,5 @@
+"""Provides the Users business logic module for search workflows."""
+
 # # Service Users Activities
 
 # # Search Users

@@ -1,3 +1,5 @@
+"""Provides the Comment request and response schema module for posts workflows."""
+
 from datetime import datetime
 from typing import List, Optional
 

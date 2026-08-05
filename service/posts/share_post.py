@@ -1,3 +1,5 @@
+"""Provides the Share Post business logic module for posts workflows."""
+
 # share this post to this users .. 
 
 # user_share 

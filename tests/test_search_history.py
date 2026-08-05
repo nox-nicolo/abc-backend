@@ -1,3 +1,5 @@
+"""Provides the Test Search History test module for the backend application."""
+
 import asyncio
 
 from models.auth.user import User

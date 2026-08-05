@@ -1,3 +1,5 @@
+"""Provides the Login User business logic module for auth workflows."""
+
 from datetime import timedelta
 from fastapi import Depends, HTTPException, status
 from sqlalchemy import or_

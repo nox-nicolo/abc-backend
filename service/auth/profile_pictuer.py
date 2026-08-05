@@ -1,3 +1,5 @@
+"""Provides the Profile Pictuer business logic module for auth workflows."""
+
 # Redefine redefine ...
 
 

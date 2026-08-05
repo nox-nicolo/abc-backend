@@ -1,3 +1,5 @@
+"""Provides the Notification request and response schema module for notifications workflows."""
+
 from datetime import datetime
 from typing import List, Literal, Optional
 

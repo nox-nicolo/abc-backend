@@ -1,3 +1,5 @@
+"""Provides the Jwt Token business logic module for auth workflows."""
+
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional

@@ -1,3 +1,5 @@
+"""Provides the Salon Config Service business logic module for profile workflows."""
+
 import uuid
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError

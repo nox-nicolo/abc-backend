@@ -1,3 +1,4 @@
+"""Provides the Create User business logic module for auth workflows."""
 
 import random
 import string

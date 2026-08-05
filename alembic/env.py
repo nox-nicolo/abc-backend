@@ -1,3 +1,5 @@
+"""Provides the Env application module for the backend application."""
+
 from logging.config import fileConfig
 
 from alembic import context

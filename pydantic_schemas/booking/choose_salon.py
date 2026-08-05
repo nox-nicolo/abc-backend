@@ -1,3 +1,5 @@
+"""Provides the Choose Salon request and response schema module for booking workflows."""
+
 from pydantic import BaseModel
 from typing import Optional
 from uuid import UUID

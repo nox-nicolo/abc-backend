@@ -1,3 +1,5 @@
+"""Provides the Health API route module for the backend application."""
+
 import os
 from datetime import datetime, timezone
 from time import perf_counter

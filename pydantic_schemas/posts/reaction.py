@@ -1,3 +1,5 @@
+"""Provides the Reaction request and response schema module for posts workflows."""
+
 from typing import Dict, Optional
 
 from pydantic import BaseModel, Field

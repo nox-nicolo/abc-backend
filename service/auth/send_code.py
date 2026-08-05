@@ -1,3 +1,5 @@
+"""Provides the Send Code business logic module for auth workflows."""
+
 import logging
 import os
 

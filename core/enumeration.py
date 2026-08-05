@@ -1,3 +1,5 @@
+"""Provides the Enumeration shared infrastructure module for the backend application."""
+
 from enum import Enum as PyEnum
 
 ADDRESS = "http://192.168.43.160:8000"

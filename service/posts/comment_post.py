@@ -1,3 +1,5 @@
+"""Provides the Comment Post business logic module for posts workflows."""
+
 import uuid
 from datetime import datetime
 from typing import Optional

@@ -1,3 +1,5 @@
+"""Provides the Service request and response schema module for the backend application."""
+
 from pydantic import BaseModel
 
 from pydantic_schemas.pagination import Page

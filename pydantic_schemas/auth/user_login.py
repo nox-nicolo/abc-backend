@@ -1,3 +1,5 @@
+"""Provides the User Login request and response schema module for auth workflows."""
+
 from pydantic import BaseModel
 
 

@@ -1,3 +1,5 @@
+"""Provides the Test Profile Insights test module for the backend application."""
+
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
